@@ -2,7 +2,7 @@ import { DocCache } from '@ceramicnetwork/common';
 import { LocalPinApi } from '../local-pin-api';
 import { PinStore } from '../store/pin-store';
 import DocID from '@ceramicnetwork/docid';
-import Document from '../document';
+import { Document } from '../document';
 import * as random from '@stablelib/random';
 
 const DOC_ID = DocID.fromString('k2t6wyfsu4pg0t2n4j8ms3s33xsgqjhtto04mvq8w5a2v5xo48idyz38l7ydki');
