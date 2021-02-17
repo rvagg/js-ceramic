@@ -1,4 +1,4 @@
-import Dispatcher, { MsgType } from '../dispatcher'
+import { MsgType, Dispatcher } from '../dispatcher'
 import CID from 'cids'
 import { Document } from "../document"
 import { TileDoctype } from "@ceramicnetwork/doctype-tile"

@@ -39,7 +39,7 @@ interface LogMessage {
 /**
  * Ceramic core Dispatcher used for handling messages from pub/sub topic.
  */
-export default class Dispatcher extends EventEmitter {
+export class Dispatcher extends EventEmitter {
   private _peerId: string
   private readonly _documents: Record<string, Document>
   // Set of IDs for QUERY messages we have sent to the pub/sub topic but not yet heard a
