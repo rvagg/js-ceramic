@@ -10,6 +10,7 @@ import { DoctypeUtils, IpfsApi } from "@ceramicnetwork/common"
 import { TextDecoder } from 'util'
 import DocID from "@ceramicnetwork/docid";
 import { DiagnosticsLogger, ServiceLogger } from "@ceramicnetwork/logger";
+import { Repository } from './repository';
 
 const IPFS_GET_TIMEOUT = 60000 // 1 minute
 const IPFS_MAX_RECORD_SIZE = 256000 // 256 KB
@@ -41,7 +42,7 @@ interface LogMessage {
  */
 export class Dispatcher extends EventEmitter {
   private _peerId: string
-  private readonly _documents: Record<string, Document>
+  readonly #repository: Repository = new Repository()
   // Set of IDs for QUERY messages we have sent to the pub/sub topic but not yet heard a
   // corresponding RESPONSE message for. Maps the query ID to the primary DocID we were querying for.
   private readonly _outstandingQueryIds: Record<string, DocID>
@@ -51,7 +52,6 @@ export class Dispatcher extends EventEmitter {
 
   constructor (public _ipfs: IpfsApi, public topic: string, private _logger: DiagnosticsLogger, private _pubsubLogger: ServiceLogger) {
     super()
-    this._documents = {}
     this._outstandingQueryIds = {}
   }
 
@@ -110,8 +110,7 @@ export class Dispatcher extends EventEmitter {
    * @param document - Document instance
    */
   async register (document: Document): Promise<void> {
-    // TODO assert that document.id is a base ID
-    this._documents[document.id.toString()] = document
+    this.#repository.add(document)
 
     // Build a QUERY message to send to the pub/sub topic to request the latest tip for this document
     const payload = await this._buildQueryMessage(document)
@@ -150,11 +149,9 @@ export class Dispatcher extends EventEmitter {
 
   /**
    * Unregister document by ID.
-   *
-   * @param id - Document ID
    */
-  unregister (id: string): void {
-    delete this._documents[id]
+  unregister (docId: DocID): void {
+    this.#repository.delete(docId)
   }
 
   /**
@@ -287,13 +284,13 @@ export class Dispatcher extends EventEmitter {
     // TODO Add validation the message adheres to the proper format.
 
     const { doc, tip } = message
-    if (!this._documents[doc]) {
-      return
+    const docId = DocID.fromString(doc)
+    if (this.#repository.has(docId)) {
+      const document = this.#repository.get(docId)
+      // TODO: add cache of cids here so that we don't emit event
+      // multiple times if we get the message more than once.
+      document.emit('update', new CID(tip))
     }
-
-    // TODO: add cache of cids here so that we don't emit event
-    // multiple times if we get the message more than once.
-    this._documents[doc].emit('update', new CID(tip))
 
     // TODO: Handle 'anchorService' if present in message
   }
@@ -305,21 +302,20 @@ export class Dispatcher extends EventEmitter {
    */
   async _handleQueryMessage(message: any): Promise<void> {
     // TODO Add validation the message adheres to the proper format.
-
-    const { doc: docId, id } = message
-    if (!this._documents[docId]) {
-      return
-    }
-
     // TODO: Should we validate that the 'id' field is the correct hash of the rest of the message?
+    const { doc, id } = message
+    const docId = DocID.fromString(doc)
+    if (this.#repository.has(docId)) {
+      const doc = this.#repository.get(docId)
 
-    // Build RESPONSE message and send it out on the pub/sub topic
-    // TODO: Handle 'paths' for multiquery support
-    const tipMap = {}
-    tipMap[docId] = this._documents[docId].tip.toString()
-    const payload = { typ: MsgType.RESPONSE, id, tips: tipMap}
-    await this._ipfs.pubsub.publish(this.topic, JSON.stringify(payload))
-    this._pubsubLogger.log({ peer: this._peerId, event: 'published', topic: this.topic, message: payload })
+      // Build RESPONSE message and send it out on the pub/sub topic
+      // TODO: Handle 'paths' for multiquery support
+      const tipMap = {}
+      tipMap[docId.toString()] = doc.tip.toString()
+      const payload = { typ: MsgType.RESPONSE, id, tips: tipMap }
+      await this._ipfs.pubsub.publish(this.topic, JSON.stringify(payload))
+      this._pubsubLogger.log({ peer: this._peerId, event: 'published', topic: this.topic, message: payload })
+    }
   }
 
   /**
@@ -331,19 +327,22 @@ export class Dispatcher extends EventEmitter {
     // TODO Add validation the message adheres to the proper format.
     const { id: queryId, tips } = message
 
-    if (!this._outstandingQueryIds[queryId]) {
+    const expectedDocID = this._outstandingQueryIds[queryId]
+    if (expectedDocID) {
+      // TODO Iterate over all documents in 'tips' object and process the new tip for each
+      const newTip = tips[expectedDocID.toString()]
+      if (!newTip) {
+        throw new Error("Response to query with ID '" + queryId + "' is missing expected new tip for docID '" +
+          expectedDocID + "'")
+      }
+      if (this.#repository.has(expectedDocID)) {
+        const document = this.#repository.get(expectedDocID)
+        document.emit('update', new CID(newTip))
+      }
+    } else {
       // We're not expecting this RESPONSE message
       return
     }
-
-    const expectedDocID = this._outstandingQueryIds[queryId]
-    const newTip = tips[expectedDocID.toString()]
-    if (!newTip) {
-      throw new Error("Response to query with ID '" + queryId + "' is missing expected new tip for docID '" +
-          expectedDocID + "'")
-    }
-    this._documents[expectedDocID.toString()].emit('update', new CID(newTip))
-    // TODO Iterate over all documents in 'tips' object and process the new tip for each
   }
 
   /**
@@ -354,7 +353,7 @@ export class Dispatcher extends EventEmitter {
 
     clearInterval(this._resubscribeInterval)
 
-    await Promise.all(Object.values(this._documents).map(async (doc) => await doc.close()))
+    await this.#repository.close()
 
     await this._ipfs.pubsub.unsubscribe(this.topic)
   }

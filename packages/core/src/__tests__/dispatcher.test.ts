@@ -59,7 +59,6 @@ describe('Dispatcher', () => {
   })
 
   it('is constructed correctly', async () => {
-    expect((dispatcher as any)._documents).toEqual({})
     expect(ipfs.pubsub.subscribe).toHaveBeenCalledWith(TOPIC, expect.anything())
   })
 
