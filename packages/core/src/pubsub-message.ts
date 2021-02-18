@@ -4,6 +4,9 @@ import { UnreachableCaseError } from '@ceramicnetwork/common';
 import dagCBOR from 'ipld-dag-cbor';
 import * as multihashes from 'multihashes';
 import * as sha256 from '@stablelib/sha256';
+import { TextDecoder } from 'util';
+import { ServiceLogger } from '@ceramicnetwork/logger';
+import * as uint8arrays from 'uint8arrays'
 
 /**
  * Ceramic Pub/Sub message type.
@@ -34,7 +37,7 @@ export type ResponseMessage = {
 
 export type PubsubMessage = UpdateMessage | QueryMessage | ResponseMessage;
 
-function messageHash(message: any): Uint8Array {
+function messageHash(message: any): string {
   // DAG-CBOR encoding
   const encoded = dagCBOR.util.serialize(message);
 
@@ -42,7 +45,7 @@ function messageHash(message: any): Uint8Array {
   const id = sha256.hash(encoded);
 
   // Multihash encoding
-  return multihashes.encode(id, 'sha2-256');
+  return uint8arrays.toString(multihashes.encode(id, 'sha2-256'), 'base64url')
 }
 
 export function serialize(message: PubsubMessage): string {
@@ -52,7 +55,7 @@ export function serialize(message: PubsubMessage): string {
 
       // Add 'id' to message that is a hash of the message contents.
       const id = messageHash(toHash);
-      const payload = { ...toHash, id: id.toString() };
+      const payload = { ...toHash, id: id };
       return JSON.stringify(payload);
     }
     case MsgType.RESPONSE: {
@@ -69,12 +72,34 @@ export function serialize(message: PubsubMessage): string {
       return JSON.stringify(payload);
     }
     default:
-      throw new UnreachableCaseError(message, 'Unknown message typ to serialize');
+      throw new UnreachableCaseError(message, 'Unknown message type');
   }
 }
 
-export function deserialize(input: string): PubsubMessage {
-  const parsed = JSON.parse(input);
+function fromIPFSMessage(messageData: string | Uint8Array): string {
+  // TODO: This is not a great way to handle the message because we don't
+  // don't know its type/contents. Ideally we can make this method generic
+  // against specific interfaces and follow IPFS specs for
+  // types (e.g. message data should be a buffer)
+  // TODO: handle signature and key buffers in message data
+  if (typeof messageData === 'string') {
+    return messageData;
+  } else {
+    return new TextDecoder('utf-8').decode(messageData);
+  }
+}
+
+export function deserialize(message: any, pubsubLogger: ServiceLogger, peerId: string, topic: string): PubsubMessage {
+  const asString = fromIPFSMessage(message)
+  const parsed = JSON.parse(asString);
+
+  // TODO: handle signature and key buffers in message data
+  // TODO: Logger does not belong here
+  const logMessage = { ...message, data: parsed }
+  delete logMessage.key
+  delete logMessage.signature
+  pubsubLogger.log({ peer: peerId, event: 'received', topic: topic, message: logMessage })
+
   const typ = parsed.typ as MsgType;
   switch (typ) {
     case MsgType.UPDATE: {
@@ -100,6 +125,6 @@ export function deserialize(input: string): PubsubMessage {
         doc: DocID.fromString(parsed.doc),
       };
     default:
-      throw new UnreachableCaseError(typ, 'Unknown message typ to deserialize');
+      throw new UnreachableCaseError(typ, 'Unknown message type');
   }
 }

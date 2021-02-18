@@ -109,7 +109,7 @@ describe('Dispatcher', () => {
 
   it('errors on invalid message type', async () => {
     const id = '/ceramic/bagjqcgzaday6dzalvmy5ady2m5a5legq5zrbsnlxfc2bfxej532ds7htpova'
-    await expect(dispatcher.handleMessage({ data: JSON.stringify({ typ: -1, id }) })).rejects.toThrow("Unsupported message type: -1")
+    await expect(dispatcher.handleMessage({ data: JSON.stringify({ typ: -1, id }) })).rejects.toThrow("Unhandled -1: Unknown message type")
   })
 
   it('handle message correctly', async () => {

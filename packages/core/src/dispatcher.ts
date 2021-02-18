@@ -1,17 +1,25 @@
-import { EventEmitter } from 'events'
-import CID from 'cids'
-import cloneDeep from 'lodash.clonedeep'
-import dagCBOR from "ipld-dag-cbor"
-import * as multihashes from 'multihashes'
-import * as sha256 from "@stablelib/sha256"
+import { EventEmitter } from 'events';
+import CID from 'cids';
+import cloneDeep from 'lodash.clonedeep';
+import dagCBOR from 'ipld-dag-cbor';
+import * as multihashes from 'multihashes';
+import * as sha256 from '@stablelib/sha256';
 
-import type { Document } from "./document"
-import { DoctypeUtils, IpfsApi } from "@ceramicnetwork/common"
-import { TextDecoder } from 'util'
-import DocID from "@ceramicnetwork/docid";
-import { DiagnosticsLogger, ServiceLogger } from "@ceramicnetwork/logger";
+import type { Document } from './document';
+import { DoctypeUtils, IpfsApi, UnreachableCaseError } from '@ceramicnetwork/common';
+import DocID from '@ceramicnetwork/docid';
+import { DiagnosticsLogger, ServiceLogger } from '@ceramicnetwork/logger';
 import { Repository } from './repository';
-import { MsgType } from './pubsub-message';
+import {
+  deserialize,
+  MsgType,
+  PubsubMessage,
+  QueryMessage,
+  ResponseMessage,
+  serialize,
+  UpdateMessage,
+} from './pubsub-message';
+import * as uint8arrays from 'uint8arrays';
 
 const IPFS_GET_TIMEOUT = 60000 // 1 minute
 const IPFS_MAX_RECORD_SIZE = 256000 // 256 KB
@@ -126,7 +134,7 @@ export class Dispatcher extends EventEmitter {
    * Computes a sha-256 multihash of the input message canonicalized using dag-cbor
    * @param message
    */
-  _hashMessage(message: any) : Uint8Array {
+  _hashMessage(message: any) : string {
     // DAG-CBOR encoding
     let id: Uint8Array = dagCBOR.util.serialize(message)
 
@@ -135,7 +143,7 @@ export class Dispatcher extends EventEmitter {
 
     // Multihash encoding
     const buf = Buffer.from(id)
-    return multihashes.encode(buf, 'sha2-256')
+    return uint8arrays.toString(multihashes.encode(buf, 'sha2-256'), 'base64url')
   }
 
   /**
@@ -208,14 +216,11 @@ export class Dispatcher extends EventEmitter {
    * @param tip - Commit CID
    */
   async publishTip (docId: DocID, tip: CID): Promise<void> {
-    if (!this._isRunning) {
-      this._logger.err('Dispatcher has been closed')
-      return
-    }
-
-    const payload = { typ: MsgType.UPDATE, doc: docId.baseID.toString(), tip: tip.toString() }
-    await this._ipfs.pubsub.publish(this.topic, JSON.stringify(payload))
-    this._pubsubLogger.log({ peer: this._peerId, event: 'published', topic: this.topic, message: payload })
+    await this.publish({
+      typ: MsgType.UPDATE,
+      doc: docId.baseID,
+      tip: tip
+    })
   }
 
   /**
@@ -233,37 +238,18 @@ export class Dispatcher extends EventEmitter {
       return
     }
 
-    // TODO: This is not a great way to handle the message because we don't
-    // don't know its type/contents. Ideally we can make this method generic
-    // against specific interfaces and follow IPFS specs for
-    // types (e.g. message data should be a buffer)
-    let parsedMessageData
-    if (typeof message.data === 'string') {
-      parsedMessageData = JSON.parse(message.data)
-    } else {
-      parsedMessageData = JSON.parse(new TextDecoder('utf-8').decode(message.data))
-    }
-    // TODO: handle signature and key buffers in message data
-    const logMessage = { ...message, data: parsedMessageData }
-    delete logMessage.key
-    delete logMessage.signature
-    this._pubsubLogger.log({ peer: this._peerId, event: 'received', topic: this.topic, message: logMessage })
+    const parsed = deserialize(message.data, this._pubsubLogger, this._peerId, this.topic)
 
-    const { typ } = parsedMessageData
-    switch (typ) {
-      case MsgType.UPDATE:
-        await this._handleUpdateMessage(parsedMessageData)
-        break
+    switch (parsed.typ) {
       case MsgType.QUERY:
-        await this._handleQueryMessage(parsedMessageData)
-        break
+        return await this._handleQueryMessage(parsed)
       case MsgType.RESPONSE:
-        await this._handleResponseMessage(parsedMessageData)
-        break
+        return await this._handleResponseMessage(parsed)
+      case MsgType.UPDATE:
+        return await this._handleUpdateMessage(parsed)
       default:
-        throw new Error("Unsupported message type: " + typ)
+        throw new UnreachableCaseError(parsed, "Unknown message type")
     }
-
   }
 
   /**
@@ -271,16 +257,12 @@ export class Dispatcher extends EventEmitter {
    * @param message
    * @private
    */
-  async _handleUpdateMessage(message: any): Promise<void> {
-    // TODO Add validation the message adheres to the proper format.
-
-    const { doc, tip } = message
-    const docId = DocID.fromString(doc)
-    if (this.repository.has(docId)) {
-      const document = this.repository.get(docId)
+  async _handleUpdateMessage(message: UpdateMessage): Promise<void> {
+    if (this.repository.has(message.doc)) {
+      const document = this.repository.get(message.doc)
       // TODO: add cache of cids here so that we don't emit event
       // multiple times if we get the message more than once.
-      document.emit('update', new CID(tip))
+      document.emit('update', new CID(message.tip))
     }
 
     // TODO: Handle 'anchorService' if present in message
@@ -291,21 +273,18 @@ export class Dispatcher extends EventEmitter {
    * @param message
    * @private
    */
-  async _handleQueryMessage(message: any): Promise<void> {
+  async _handleQueryMessage(message: QueryMessage): Promise<void> {
     // TODO Add validation the message adheres to the proper format.
     // TODO: Should we validate that the 'id' field is the correct hash of the rest of the message?
-    const { doc, id } = message
-    const docId = DocID.fromString(doc)
-    if (this.repository.has(docId)) {
-      const doc = this.repository.get(docId)
+    if (this.repository.has(message.doc)) {
+      const doc = this.repository.get(message.doc)
 
-      // Build RESPONSE message and send it out on the pub/sub topic
       // TODO: Handle 'paths' for multiquery support
-      const tipMap = {}
-      tipMap[docId.toString()] = doc.tip.toString()
-      const payload = { typ: MsgType.RESPONSE, id, tips: tipMap }
-      await this._ipfs.pubsub.publish(this.topic, JSON.stringify(payload))
-      this._pubsubLogger.log({ peer: this._peerId, event: 'published', topic: this.topic, message: payload })
+      await this.publish({
+        typ: MsgType.RESPONSE,
+        id: message.id,
+        tips: new Map().set(message.doc.toString(), doc.tip)
+      })
     }
   }
 
@@ -314,26 +293,30 @@ export class Dispatcher extends EventEmitter {
    * @param message
    * @private
    */
-  async _handleResponseMessage(message: any): Promise<void> {
-    // TODO Add validation the message adheres to the proper format.
-    const { id: queryId, tips } = message
+  async _handleResponseMessage(message: ResponseMessage): Promise<void> {
+    const expectedDocID = this._outstandingQueryIds[message.id]
+    // We're not expecting this RESPONSE message
+    if (!expectedDocID) return;
 
-    const expectedDocID = this._outstandingQueryIds[queryId]
-    if (expectedDocID) {
-      // TODO Iterate over all documents in 'tips' object and process the new tip for each
-      const newTip = tips[expectedDocID.toString()]
-      if (!newTip) {
-        throw new Error("Response to query with ID '" + queryId + "' is missing expected new tip for docID '" +
-          expectedDocID + "'")
-      }
-      if (this.repository.has(expectedDocID)) {
-        const document = this.repository.get(expectedDocID)
-        document.emit('update', new CID(newTip))
-      }
-    } else {
-      // We're not expecting this RESPONSE message
+    // TODO Iterate over all documents in 'tips' object and process the new tip for each
+    const newTip = message.tips.get(expectedDocID.toString())
+    if (!newTip) {
+      throw new Error("Response to query with ID '" + message.id + "' is missing expected new tip for docID '" +
+        expectedDocID + "'")
+    }
+    if (this.repository.has(expectedDocID)) {
+      const document = this.repository.get(expectedDocID)
+      document.emit('update', new CID(newTip))
+    }
+  }
+
+  async publish(message: PubsubMessage): Promise<void> {
+    if (!this._isRunning) {
+      this._logger.err('Dispatcher has been closed')
       return
     }
+    await this._ipfs.pubsub.publish(this.topic, serialize(message))
+    this._pubsubLogger.log({ peer: this._peerId, event: 'published', topic: this.topic, message: message })
   }
 
   /**
