@@ -42,7 +42,6 @@ interface LogMessage {
  */
 export class Dispatcher extends EventEmitter {
   private _peerId: string
-  readonly #repository: Repository = new Repository()
   // Set of IDs for QUERY messages we have sent to the pub/sub topic but not yet heard a
   // corresponding RESPONSE message for. Maps the query ID to the primary DocID we were querying for.
   private readonly _outstandingQueryIds: Record<string, DocID>
@@ -50,7 +49,7 @@ export class Dispatcher extends EventEmitter {
   private _isRunning = true
   private _resubscribeInterval: any
 
-  constructor (public _ipfs: IpfsApi, public topic: string, private _logger: DiagnosticsLogger, private _pubsubLogger: ServiceLogger) {
+  constructor (public _ipfs: IpfsApi, public topic: string, private readonly repository: Repository, private _logger: DiagnosticsLogger, private _pubsubLogger: ServiceLogger) {
     super()
     this._outstandingQueryIds = {}
   }
@@ -110,7 +109,7 @@ export class Dispatcher extends EventEmitter {
    * @param document - Document instance
    */
   async register (document: Document): Promise<void> {
-    this.#repository.add(document)
+    this.repository.add(document)
 
     // Build a QUERY message to send to the pub/sub topic to request the latest tip for this document
     const payload = await this._buildQueryMessage(document)
@@ -151,7 +150,7 @@ export class Dispatcher extends EventEmitter {
    * Unregister document by ID.
    */
   unregister (docId: DocID): void {
-    this.#repository.delete(docId)
+    this.repository.delete(docId)
   }
 
   /**
@@ -285,8 +284,8 @@ export class Dispatcher extends EventEmitter {
 
     const { doc, tip } = message
     const docId = DocID.fromString(doc)
-    if (this.#repository.has(docId)) {
-      const document = this.#repository.get(docId)
+    if (this.repository.has(docId)) {
+      const document = this.repository.get(docId)
       // TODO: add cache of cids here so that we don't emit event
       // multiple times if we get the message more than once.
       document.emit('update', new CID(tip))
@@ -305,8 +304,8 @@ export class Dispatcher extends EventEmitter {
     // TODO: Should we validate that the 'id' field is the correct hash of the rest of the message?
     const { doc, id } = message
     const docId = DocID.fromString(doc)
-    if (this.#repository.has(docId)) {
-      const doc = this.#repository.get(docId)
+    if (this.repository.has(docId)) {
+      const doc = this.repository.get(docId)
 
       // Build RESPONSE message and send it out on the pub/sub topic
       // TODO: Handle 'paths' for multiquery support
@@ -335,8 +334,8 @@ export class Dispatcher extends EventEmitter {
         throw new Error("Response to query with ID '" + queryId + "' is missing expected new tip for docID '" +
           expectedDocID + "'")
       }
-      if (this.#repository.has(expectedDocID)) {
-        const document = this.#repository.get(expectedDocID)
+      if (this.repository.has(expectedDocID)) {
+        const document = this.repository.get(expectedDocID)
         document.emit('update', new CID(newTip))
       }
     } else {
@@ -353,7 +352,7 @@ export class Dispatcher extends EventEmitter {
 
     clearInterval(this._resubscribeInterval)
 
-    await this.#repository.close()
+    await this.repository.close()
 
     await this._ipfs.pubsub.unsubscribe(this.topic)
   }

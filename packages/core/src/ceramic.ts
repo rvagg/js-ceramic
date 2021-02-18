@@ -40,6 +40,7 @@ import InMemoryAnchorService from "./anchor/memory/in-memory-anchor-service"
 
 import { randomUint32 } from '@stablelib/random'
 import { LocalPinApi } from './local-pin-api';
+import { Repository } from './repository';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../package.json')
@@ -288,7 +289,8 @@ class Ceramic implements CeramicApi {
     const networkOptions = await Ceramic._generateNetworkOptions(config, anchorService)
     logger.imp(`Connecting to ceramic network '${networkOptions.name}' using pubsub topic '${networkOptions.pubsubTopic}' with supported anchor chains ['${networkOptions.supportedChains.join("','")}']`)
 
-    const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, logger, pubsubLogger)
+    const repository = new Repository()
+    const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, repository, logger, pubsubLogger)
     await dispatcher.init()
 
     const pinStoreProperties = {
