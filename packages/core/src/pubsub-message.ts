@@ -76,21 +76,8 @@ export function serialize(message: PubsubMessage): string {
   }
 }
 
-function fromIPFSMessage(messageData: string | Uint8Array): string {
-  // TODO: This is not a great way to handle the message because we don't
-  // don't know its type/contents. Ideally we can make this method generic
-  // against specific interfaces and follow IPFS specs for
-  // types (e.g. message data should be a buffer)
-  // TODO: handle signature and key buffers in message data
-  if (typeof messageData === 'string') {
-    return messageData;
-  } else {
-    return new TextDecoder('utf-8').decode(messageData);
-  }
-}
-
 export function deserialize(message: any, pubsubLogger: ServiceLogger, peerId: string, topic: string): PubsubMessage {
-  const asString = fromIPFSMessage(message)
+  const asString = new TextDecoder('utf-8').decode(message.data)
   const parsed = JSON.parse(asString);
 
   // TODO: handle signature and key buffers in message data

@@ -6,6 +6,7 @@ import DocID from "@ceramicnetwork/docid";
 import { LoggerProvider } from "@ceramicnetwork/common";
 import { Repository } from '../repository';
 import { MsgType } from '../pubsub-message';
+import * as uint8arrays from 'uint8arrays';
 
 const TOPIC = '/ceramic'
 const FAKE_CID = new CID('bafybeig6xv5nwphfmvcnektpnojts33jqcuam7bmye2pb54adnrtccjlsu')
@@ -36,6 +37,14 @@ class TileDoctypeMock extends TileDoctype {
 
   get tip() {
     return FAKE_CID
+  }
+}
+
+function asIpfsMessage(data: any) {
+  const asBytes = uint8arrays.fromString(JSON.stringify(data))
+  return {
+    from: 'outer-space',
+    data: asBytes
   }
 }
 
@@ -107,7 +116,7 @@ describe('Dispatcher', () => {
 
   it('errors on invalid message type', async () => {
     const id = '/ceramic/bagjqcgzaday6dzalvmy5ady2m5a5legq5zrbsnlxfc2bfxej532ds7htpova'
-    await expect(dispatcher.handleMessage({ data: JSON.stringify({ typ: -1, id }) })).rejects.toThrow("Unhandled -1: Unknown message type")
+    await expect(dispatcher.handleMessage(asIpfsMessage({ typ: -1, id }))).rejects.toThrow("Unhandled -1: Unknown message type")
   })
 
   it('handle message correctly', async () => {
@@ -131,16 +140,16 @@ describe('Dispatcher', () => {
 
     // Handle UPDATE message
     const updatePromise = new Promise(resolve => doc.on('update', resolve))
-    await dispatcher.handleMessage({ data: JSON.stringify({ typ: MsgType.UPDATE, doc: FAKE_DOC_ID, tip: FAKE_CID.toString() }) })
+    await dispatcher.handleMessage(asIpfsMessage({ typ: MsgType.UPDATE, doc: FAKE_DOC_ID, tip: FAKE_CID.toString() }))
     expect(await updatePromise).toEqual(FAKE_CID)
 
     // Handle QUERY message
-    await dispatcher.handleMessage({ data: JSON.stringify({ typ: MsgType.QUERY, doc: FAKE_DOC_ID, id: "1" }) })
+    await dispatcher.handleMessage(asIpfsMessage({ typ: MsgType.QUERY, doc: FAKE_DOC_ID, id: "1" }))
     expect(ipfs.pubsub.publish).lastCalledWith(TOPIC, JSON.stringify({ typ: MsgType.RESPONSE, id: "1", tips: {[FAKE_DOC_ID]: FAKE_CID.toString()} }))
 
     // Handle RESPONSE message
     const updatePromise2 = new Promise(resolve => doc.on('update', resolve))
-    await dispatcher.handleMessage({ data: JSON.stringify({ typ: MsgType.RESPONSE, id: queryID, tips: { [FAKE_DOC_ID]: FAKE_CID2.toString() } }) })
+    await dispatcher.handleMessage(asIpfsMessage({ typ: MsgType.RESPONSE, id: queryID, tips: { [FAKE_DOC_ID]: FAKE_CID2.toString() } }))
     expect(await updatePromise2).toEqual(FAKE_CID2)
   })
 })
