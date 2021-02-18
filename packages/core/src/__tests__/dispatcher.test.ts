@@ -1,10 +1,11 @@
-import { MsgType, Dispatcher } from '../dispatcher'
+import { Dispatcher } from '../dispatcher'
 import CID from 'cids'
 import { Document } from "../document"
 import { TileDoctype } from "@ceramicnetwork/doctype-tile"
 import DocID from "@ceramicnetwork/docid";
 import { LoggerProvider } from "@ceramicnetwork/common";
 import { Repository } from '../repository';
+import { MsgType } from '../pubsub-message';
 
 const TOPIC = '/ceramic'
 const FAKE_CID = new CID('bafybeig6xv5nwphfmvcnektpnojts33jqcuam7bmye2pb54adnrtccjlsu')
