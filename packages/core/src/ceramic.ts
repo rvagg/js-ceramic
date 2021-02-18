@@ -42,6 +42,7 @@ import InMemoryAnchorService from "./anchor/memory/in-memory-anchor-service"
 
 import { randomUint32 } from '@stablelib/random'
 import { LocalPinApi } from './local-pin-api';
+import { Repository } from './repository';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../package.json')
@@ -325,7 +326,8 @@ class Ceramic implements CeramicApi {
 
     const ipfsTopology = new IpfsTopology(ipfs, networkOptions.name)
     const pinStoreFactory = new PinStoreFactory(ipfs, pinStoreOptions)
-    const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, logger, pubsubLogger)
+    const repository = new Repository()
+    const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, repository, logger, pubsubLogger)
 
     const params = {
       cacheDocumentCommits: config.cacheDocCommits ?? true,
