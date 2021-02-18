@@ -236,7 +236,7 @@ export class Dispatcher {
       return
     }
 
-    const parsed = deserialize(message.data, this._pubsubLogger, this._peerId, this.topic)
+    const parsed = deserialize(message, this._pubsubLogger, this._peerId, this.topic)
 
     switch (parsed.typ) {
       case MsgType.QUERY:
