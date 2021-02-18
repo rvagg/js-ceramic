@@ -112,7 +112,7 @@ export class Dispatcher extends EventEmitter {
     this.repository.add(document)
 
     // Build a QUERY message to send to the pub/sub topic to request the latest tip for this document
-    const payload = await this._buildQueryMessage(document)
+    const payload = this._buildQueryMessage(document)
 
     // Store the query id so we'll process the corresponding RESPONSE message when it comes in
     this._outstandingQueryIds[payload.id] = document.id.baseID
@@ -121,11 +121,11 @@ export class Dispatcher extends EventEmitter {
     this._pubsubLogger.log({ peer: this._peerId, event: 'published', topic: this.topic, message: payload })
   }
 
-  async _buildQueryMessage(document: Document): Promise<Record<string, any>> {
+  _buildQueryMessage(document: Document): Record<string, any> {
     const message = { typ: MsgType.QUERY, doc: document.id.baseID.toString() }
 
     // Add 'id' to message that is a hash of the message contents.
-    const id = await this._hashMessage(message)
+    const id = this._hashMessage(message)
 
     return {...message, id: id.toString()}
   }
@@ -134,7 +134,7 @@ export class Dispatcher extends EventEmitter {
    * Computes a sha-256 multihash of the input message canonicalized using dag-cbor
    * @param message
    */
-  async _hashMessage(message: any) : Promise<Uint8Array> {
+  _hashMessage(message: any) : Uint8Array {
     // DAG-CBOR encoding
     let id: Uint8Array = dagCBOR.util.serialize(message)
 
