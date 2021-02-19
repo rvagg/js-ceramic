@@ -21,6 +21,7 @@ jest.mock('../store/level-state-store')
 
 import InMemoryAnchorService from "../anchor/memory/in-memory-anchor-service"
 import {FakeTopology} from "./fake-topology";
+import { Repository } from '../repository';
 import {PinStoreFactory} from "../store/pin-store-factory";
 
 jest.mock('../dispatcher', () => {
