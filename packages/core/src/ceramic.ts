@@ -323,17 +323,17 @@ class Ceramic implements CeramicApi {
       pinningBackends: config.pinningBackends,
     }
 
-    const ipfsTopology = new IpfsTopology(ipfs, networkOptions.name)
-    const pinStoreFactory = new PinStoreFactory(ipfs, pinStoreOptions)
-    const repository = new Repository()
-    const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, repository, logger, pubsubLogger)
-
     const params = {
       cacheDocumentCommits: config.cacheDocCommits ?? true,
       docCacheLimit: config.docCacheLimit ?? DEFAULT_DOC_CACHE_LIMIT,
       networkOptions,
       validateDocs: config.validateDocs ?? true,
     }
+
+    const ipfsTopology = new IpfsTopology(ipfs, networkOptions.name)
+    const pinStoreFactory = new PinStoreFactory(ipfs, pinStoreOptions)
+    const repository = new Repository(params.docCacheLimit)
+    const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, repository, logger, pubsubLogger)
 
     const modules = {
       anchorService,

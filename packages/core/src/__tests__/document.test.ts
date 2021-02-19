@@ -199,7 +199,7 @@ describe('Document', () => {
         supportedChains: ['inmemory:12345']
       }
 
-      const repository = new Repository()
+      const repository = new Repository(100)
       const topology = new FakeTopology(dispatcher._ipfs, networkOptions.name)
 
       const pinStoreFactory = {
@@ -787,7 +787,7 @@ describe('Document', () => {
         supportedChains: ['inmemory:12345']
       }
       const topology = new FakeTopology(dispatcher._ipfs, networkOptions.name)
-      const repository = new Repository()
+      const repository = new Repository(100)
 
       const pinStoreFactory = {
         open: async() => {

@@ -61,7 +61,7 @@ describe('Dispatcher', () => {
     ipfs.pubsub.unsubscribe.mockClear()
     ipfs.pubsub.publish.mockClear()
 
-    repository = new Repository()
+    repository = new Repository(100)
     loggerProvider = new LoggerProvider()
     dispatcher = new Dispatcher(ipfs, TOPIC, repository, loggerProvider.getDiagnosticsLogger(), loggerProvider.makeServiceLogger("pubsub"))
     await dispatcher.init()
