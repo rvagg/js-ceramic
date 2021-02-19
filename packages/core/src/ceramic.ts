@@ -22,7 +22,6 @@ import {
   PinApi,
   MultiQuery,
   PinningBackendStatic,
-  DocCache,
   AnchorStatus,
   LoggerProvider,
 } from "@ceramicnetwork/common"
@@ -126,10 +125,9 @@ class Ceramic implements CeramicApi {
   public readonly pin: PinApi
   public readonly context: Context
 
-  private readonly _docCache: DocCache
-
   // TODO: Make the constructor private and force the use of Ceramic.create() everywhere
   constructor (public dispatcher: Dispatcher,
+               private repository: Repository,
                public pinStore: PinStore,
                context: Context,
                readonly topology: IpfsTopology,
@@ -142,9 +140,7 @@ class Ceramic implements CeramicApi {
       'caip10-link': new Caip10LinkDoctypeHandler()
     }
 
-    this._docCache = new DocCache(docCacheLimit, cacheDocumentCommits)
-
-    this.pin = new LocalPinApi(this.pinStore, this._docCache, this._loadDoc.bind(this))
+    this.pin = new LocalPinApi(this.pinStore, this._loadDoc.bind(this))
     this.context = context
     this.context.api = this // set API reference
   }
@@ -302,7 +298,7 @@ class Ceramic implements CeramicApi {
     const pinStoreFactory = new PinStoreFactory(ipfs, pinStoreProperties)
     const pinStore = await pinStoreFactory.open()
     const topology = new IpfsTopology(ipfs, networkOptions.name)
-    const ceramic = new Ceramic(dispatcher, pinStore, context, topology, networkOptions, config.validateDocs, config.docCacheLimit, config.cacheDocCommits)
+    const ceramic = new Ceramic(dispatcher, repository, pinStore, context, topology, networkOptions, config.validateDocs, config.docCacheLimit, config.cacheDocCommits)
     anchorService.ceramic = ceramic
 
     const keyDidResolver = KeyDidResolver.getResolver()
@@ -374,15 +370,6 @@ class Ceramic implements CeramicApi {
   }
 
   /**
-   * Get document from cache by DocID
-   * @param docId - Document ID
-   * @private
-   */
-  private _getDocFromCache(docId: DocID): Document {
-    return this._docCache.get(docId) as Document
-  }
-
-  /**
    * Create doctype instance
    * @param doctype - Document type
    * @param params - Create parameters
@@ -407,14 +394,13 @@ class Ceramic implements CeramicApi {
     const genesisCid = await this.dispatcher.storeCommit(genesis)
     const docId = new DocID(doctype, genesisCid)
 
-    let doc = this._getDocFromCache(docId)
-    if (doc) {
-      return doc
+    if (this.repository.has(docId)) {
+      return this.repository.get(docId)
+    } else {
+      const document = await Document.create(docId, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
+      // this.repository.add(document)
+      return document
     }
-
-    doc = await Document.create(docId, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
-    this._docCache.put(doc)
-    return doc
   }
 
   /**
@@ -444,14 +430,13 @@ class Ceramic implements CeramicApi {
 
     const docId = new DocID(doctype, genesisCid)
 
-    let doc = this._getDocFromCache(docId)
-    if (doc) {
-      return doc
+    if (this.repository.has(docId)) {
+      return this.repository.get(docId)
+    } else {
+      const document = await Document.create(docId, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
+      // this.repository.add(document) TODO See Document#register, it adds to the repository too
+      return document
     }
-
-    doc = await Document.create(docId, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
-    this._docCache.put(doc)
-    return doc
   }
 
   /**
@@ -553,25 +538,26 @@ class Ceramic implements CeramicApi {
   async _loadDoc(docId: DocID | CommitID | string, opts: DocOpts = {}): Promise<Document> {
     const docRef = DocRef.from(docId)
 
-    // If we already have cached exactly what we want, just return it from the cache
-    let doc = this._getDocFromCache(docRef.baseID)
-    if (!doc) {
+
+    let doc: Document
+    if (this.repository.has(docRef.baseID)) {
+      doc = this.repository.get(docRef.baseID)
+    } else {
       // Load the current version of the document
       const doctypeHandler = this._doctypeHandlers[docRef.typeName]
       if (!doctypeHandler) {
         throw new Error(docRef.typeName + " is not a valid doctype")
       }
       doc = await Document.load(docRef.baseID, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts)
-      this._docCache.put(doc)
+      this.repository.add(doc)
     }
 
+    // If DocID is requested, return the document
     if (docRef instanceof DocID) {
       return doc
     } else {
-      // We requested a specific commit
-      doc = await Document.loadAtCommit(docRef, doc)
-      this._docCache.put(doc)
-      return doc
+      // Here CommitID is requested, let's return document at specific commit
+      return Document.loadAtCommit(docRef, doc)
     }
   }
 

@@ -21,6 +21,7 @@ jest.mock('../store/level-state-store')
 
 import InMemoryAnchorService from "../anchor/memory/in-memory-anchor-service"
 import {FakeTopology} from "./fake-topology";
+import { Repository } from '../repository';
 
 jest.mock('../dispatcher', () => {
   const CID = require('cids') // eslint-disable-line @typescript-eslint/no-var-requires
@@ -204,10 +205,11 @@ describe('Document', () => {
       }
 
       const topology = new FakeTopology(dispatcher._ipfs, networkOptions.name)
-      ceramic = new Ceramic(dispatcher, pinStore, context, topology, networkOptions)
+      const repository = new Repository()
+      ceramic = new Ceramic(dispatcher, repository, pinStore, context, topology, networkOptions)
       ceramic._doctypeHandlers['tile'] = doctypeHandler
 
-      ceramicWithoutSchemaValidation = new Ceramic(dispatcher, pinStore, context, topology, networkOptions, false)
+      ceramicWithoutSchemaValidation = new Ceramic(dispatcher, repository, pinStore, context, topology, networkOptions, false)
       ceramicWithoutSchemaValidation._doctypeHandlers['tile'] = doctypeHandler
     })
 
@@ -765,7 +767,8 @@ describe('Document', () => {
         supportedChains: ['inmemory:12345']
       }
       const topology = new FakeTopology(dispatcher._ipfs, networkOptions.name)
-      ceramic = new Ceramic(dispatcher, pinStore, context, topology, networkOptions)
+      const repository = new Repository()
+      ceramic = new Ceramic(dispatcher, repository, pinStore, context, topology, networkOptions)
       ceramic._doctypeHandlers['tile'] = doctypeHandler
     })
 
