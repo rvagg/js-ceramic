@@ -162,14 +162,14 @@ class Document extends EventEmitter implements DocStateHolder {
 
     // If 'commit' is not included in doc's log at this point, that means that conflict resolution
     // rejected it.
-    const commitIndex = await doc._findIndex(id.commit, doc._doctype.state.log)
+    const commitIndex = await doc._findIndex(id.commit, doc.state.log)
     if (commitIndex < 0) {
       throw new Error(`Requested commit CID ${id.commit.toString()} not found in the log for document ${id.baseID.toString()}`)
     }
 
     // If the requested commit is included in the log, but isn't the most recent commit, we need
     // to reset the state to the state at the requested commit.
-    const resetLog = doc._doctype.state.log.slice(0, commitIndex + 1)
+    const resetLog = doc.state.log.slice(0, commitIndex + 1)
     const resetState = await doc._applyLogToState(resetLog.map((logEntry) => logEntry.cid))
     return new Document(resetState, doc.dispatcher, doc.pinStore, doc._validate, doc._context, doc._doctypeHandler, true)
   }
@@ -304,7 +304,7 @@ class Document extends EventEmitter implements DocStateHolder {
         if (log.length) {
           const next = await this._applyLog(log)
           if (next) {
-            this._doctype.state = next
+            this._doctype.state = next // FIXME NEXT
             this._doctype.emit('change')
           }
         }
@@ -584,16 +584,16 @@ class Document extends EventEmitter implements DocStateHolder {
               switch (asr.status) {
                 case AnchorStatus.PENDING: {
                   const next = {
-                    ...doc._doctype.state,
+                    ...doc.state,
                     anchorStatus: AnchorStatus.PENDING,
                   }
                   if (asr.anchorScheduledFor) next.anchorScheduledFor = asr.anchorScheduledFor
-                  doc._doctype.state = next
+                  doc._doctype.state = next // FIXME NEXT
                   await doc._updateStateIfPinned();
                   return;
                 }
                 case AnchorStatus.PROCESSING: {
-                  doc._doctype.state = { ...doc._doctype.state, anchorStatus: AnchorStatus.PROCESSING };
+                  doc._doctype.state = { ...doc._doctype.state, anchorStatus: AnchorStatus.PROCESSING }; // FIXME NEXT
                   await doc._updateStateIfPinned();
                   return;
                 }
@@ -608,7 +608,7 @@ class Document extends EventEmitter implements DocStateHolder {
                   if (requestTip !== doc.tip) {
                     return;
                   }
-                  doc._doctype.state = { ...doc._doctype.state, anchorStatus: AnchorStatus.FAILED };
+                  doc._doctype.state = { ...doc._doctype.state, anchorStatus: AnchorStatus.FAILED }; // FIXME NEXT
                   subscription.unsubscribe();
                   return;
                 }
