@@ -297,7 +297,8 @@ class Document extends EventEmitter implements DocStateHolder {
         if (log.length) {
           const next = await this._applyLog(log)
           if (next) {
-            this._doctype.state = next // FIXME NEXT
+            // this._doctype.state = next // FIXME NEXT
+            this.state$.next(next)
             this._doctype.emit('change')
           }
         }
@@ -576,17 +577,14 @@ class Document extends EventEmitter implements DocStateHolder {
             concatMap(async (asr) => {
               switch (asr.status) {
                 case AnchorStatus.PENDING: {
-                  const next = {
-                    ...doc.state,
-                    anchorStatus: AnchorStatus.PENDING,
-                  }
+                  const next = { ...doc.state, anchorStatus: AnchorStatus.PENDING }
                   if (asr.anchorScheduledFor) next.anchorScheduledFor = asr.anchorScheduledFor
                   doc._doctype.state = next // FIXME NEXT
                   await doc._updateStateIfPinned();
                   return;
                 }
                 case AnchorStatus.PROCESSING: {
-                  doc._doctype.state = { ...doc._doctype.state, anchorStatus: AnchorStatus.PROCESSING }; // FIXME NEXT
+                  doc._doctype.state = { ...doc.state, anchorStatus: AnchorStatus.PROCESSING }; // FIXME NEXT
                   await doc._updateStateIfPinned();
                   return;
                 }
