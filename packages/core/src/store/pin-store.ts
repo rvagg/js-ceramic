@@ -1,5 +1,5 @@
 import { StateStore } from "./state-store";
-import { Doctype, LogEntry, DocState, PinningBackend } from "@ceramicnetwork/common"
+import { LogEntry, DocState, PinningBackend, DocStateHolder } from '@ceramicnetwork/common';
 import CID from "cids"
 import DocID from '@ceramicnetwork/docid'
 
@@ -24,7 +24,7 @@ export class PinStore {
         await this.pinning.close()
     }
 
-    async add(document: Doctype): Promise<void> {
+    async add(document: DocStateHolder): Promise<void> {
         await this.stateStore.save(document)
         const points = await this.pointsOfInterest(document.state)
         await Promise.all(points.map(point => this.pinning.pin(point)))
