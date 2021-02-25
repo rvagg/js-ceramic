@@ -5,10 +5,7 @@ import { TileDoctype } from "@ceramicnetwork/doctype-tile"
 import DocID from "@ceramicnetwork/docid";
 import {
   CommitType,
-  Context,
   DocState,
-  Doctype,
-  DoctypeConstructor,
   DoctypeHandler,
   LoggerProvider,
 } from '@ceramicnetwork/common';
