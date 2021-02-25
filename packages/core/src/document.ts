@@ -52,7 +52,7 @@ class Document extends EventEmitter implements DocStateHolder {
     super()
     const doctype = new _doctypeHandler.doctype(initialState, _context)
     this._doctype = readonly ? DoctypeUtils.makeReadOnly(doctype) : doctype
-    this.id = new DocID(_doctypeHandler.name, this._doctype.state.log[0].cid)
+    this.id = new DocID(_doctypeHandler.name, initialState.log[0].cid)
     this._logger = _context.loggerProvider.getDiagnosticsLogger()
 
     this._applyQueue = new PQueue({ concurrency: 1 })
@@ -84,7 +84,6 @@ class Document extends EventEmitter implements DocStateHolder {
     const state = await doctypeHandler.applyCommit(genesis, docId.cid, context)
 
     const doc = new Document(state, dispatcher, pinStore, validate, context, doctypeHandler)
-    doc._doctype.state = state
 
     if (validate) {
       const schema = await Document.loadSchema(context, doc._doctype)
@@ -136,7 +135,7 @@ class Document extends EventEmitter implements DocStateHolder {
     // Update document state to cached state if any
     const pinnedState = await pinStore.stateStore.load(id)
     if (pinnedState) {
-      doc._doctype.state = pinnedState
+      doc._doctype.state = pinnedState // FIXME NEXT
     }
 
     // Request current tip from pub/sub system and register for future updates
@@ -453,7 +452,7 @@ class Document extends EventEmitter implements DocStateHolder {
     }
     if (payload.prev.equals(this.tip)) {
       // the new log starts where the previous one ended
-      this._doctype.state = await this._applyLogToState(log, cloneDeep(this.state))
+      this._doctype.state = await this._applyLogToState(log, cloneDeep(this.state)) // FIXME NEXT
       return true
     }
 
@@ -474,7 +473,7 @@ class Document extends EventEmitter implements DocStateHolder {
     }
 
     state = await this._applyLogToState(log, cloneDeep(state))
-    this._doctype.state = state
+    this._doctype.state = state // FIXME NEXT
     return true
   }
 
