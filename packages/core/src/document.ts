@@ -359,7 +359,6 @@ class Document extends EventEmitter implements DocStateHolder {
    * @private
    */
   async _findIndex(cid: CID, log: Array<LogEntry>): Promise<number> {
-    // const conflictIdx = this._doctype.state.log.findIndex(x => x.equals(commit.prev)) + 1
     for (let index = 0; index < log.length; index++) {
       const c = log[index].cid
       if (c.equals(cid)) {
