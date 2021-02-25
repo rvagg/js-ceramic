@@ -3,7 +3,15 @@ import CID from 'cids'
 import Document from "../document"
 import { TileDoctype } from "@ceramicnetwork/doctype-tile"
 import DocID from "@ceramicnetwork/docid";
-import { CommitType, DocState, LoggerProvider } from '@ceramicnetwork/common';
+import {
+  CommitType,
+  Context,
+  DocState,
+  Doctype,
+  DoctypeConstructor,
+  DoctypeHandler,
+  LoggerProvider,
+} from '@ceramicnetwork/common';
 import { serialize, MsgType } from '../pubsub/pubsub-message';
 import { Repository } from '../repository';
 import { delay } from '../pubsub/__tests__/delay';
@@ -11,7 +19,7 @@ import { delay } from '../pubsub/__tests__/delay';
 const TOPIC = '/ceramic'
 const FAKE_CID = new CID('bafybeig6xv5nwphfmvcnektpnojts33jqcuam7bmye2pb54adnrtccjlsu')
 const FAKE_CID2 = new CID('bafybeig6xv5nwphfmvcnektpnojts44jqcuam7bmye2pb54adnrtccjlsu')
-const FAKE_DOC_ID = DocID.fromString("kjzl6cwe1jw147dvq16zluojmraqvwdmbh61dx9e0c59i344lcrsgqfohexp60s")
+const FAKE_DOC_ID = new DocID("tile", FAKE_CID)
 
 const ipfs = {
   pubsub: {
@@ -44,6 +52,11 @@ class TileDoctypeMock extends TileDoctype {
     return 'tile'
   }
 }
+
+const fakeHandler  = {
+  name: 'tile',
+  doctype: TileDoctypeMock
+} as unknown as DoctypeHandler<TileDoctype>
 
 describe('Dispatcher', () => {
 
@@ -79,15 +92,14 @@ describe('Dispatcher', () => {
 
   it('makes registration correctly', async () => {
     const doc = new Document(
-      FAKE_DOC_ID,
+      null,
       dispatcher,
       null,
       false,
       {loggerProvider},
-      null,
+      fakeHandler,
       null
     )
-    doc['_doctype'] = new TileDoctypeMock(null, {})
     await dispatcher.register(doc)
 
     const publishArgs = ipfs.pubsub.publish.mock.calls[0]
@@ -126,15 +138,14 @@ describe('Dispatcher', () => {
 
   it('handle message correctly', async () => {
     const doc = new Document(
-      FAKE_DOC_ID,
+      null,
       dispatcher,
       null,
       false,
       {loggerProvider},
-      null,
+      fakeHandler,
       null
     )
-    doc['_doctype'] = new TileDoctypeMock(null, {})
     await dispatcher.register(doc)
 
     // Store the query ID sent when the doc is registered so we can use it as the response ID later

@@ -34,21 +34,25 @@ const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
  * Document handles the update logic of the Doctype instance
  */
 class Document extends EventEmitter implements DocStateHolder {
+  readonly id: DocID
   private _applyQueue: PQueue
 
   private _logger: DiagnosticsLogger
   private _isProcessing: boolean
   private readonly subscriptionSet = new SubscriptionSet();
+  _doctype: Doctype
 
-  constructor (public readonly id: DocID,
+  constructor (initialState: DocState,
                public dispatcher: Dispatcher,
                public pinStore: PinStore,
                private _validate: boolean,
                private _context: Context,
                private _doctypeHandler: DoctypeHandler<Doctype>,
-               private _doctype: Doctype) {
+               readonly = false) {
     super()
-
+    const doctype = new _doctypeHandler.doctype(initialState, _context)
+    this._doctype = readonly ? DoctypeUtils.makeReadOnly(doctype) : doctype
+    this.id = new DocID(_doctypeHandler.name, this._doctype.state.log[0].cid)
     this._logger = _context.loggerProvider.getDiagnosticsLogger()
 
     this._applyQueue = new PQueue({ concurrency: 1 })
@@ -64,7 +68,7 @@ class Document extends EventEmitter implements DocStateHolder {
    * @param opts - Initialization options
    * @param validate - Validate content against schema
    */
-  static async create<T extends Doctype> (
+  static async create (
       docId: DocID,
       doctypeHandler: DoctypeHandler<Doctype>,
       dispatcher: Dispatcher,
@@ -76,11 +80,10 @@ class Document extends EventEmitter implements DocStateHolder {
     // Fill 'opts' with default values for any missing fields
     opts = {...DEFAULT_WRITE_DOCOPTS, ...opts}
 
-    const doctype = new doctypeHandler.doctype(null, context) as T
     const genesis = await dispatcher.retrieveCommit(docId.cid)
     const state = await doctypeHandler.applyCommit(genesis, docId.cid, context)
 
-    const doc = new Document(docId, dispatcher, pinStore, validate, context, doctypeHandler, doctype)
+    const doc = new Document(state, dispatcher, pinStore, validate, context, doctypeHandler)
     doc._doctype.state = state
 
     if (validate) {
@@ -151,7 +154,7 @@ class Document extends EventEmitter implements DocStateHolder {
    * @param id - DocID of the document including the requested commit
    * @param doc - Most current version of the document that we know about
    */
-  static async loadAtCommit<T extends Doctype> (
+  static async loadAtCommit (
       id: CommitID,
       doc: Document): Promise<Document> {
 
@@ -169,10 +172,7 @@ class Document extends EventEmitter implements DocStateHolder {
     // to reset the state to the state at the requested commit.
     const resetLog = doc._doctype.state.log.slice(0, commitIndex + 1)
     const resetState = await doc._applyLogToState(resetLog.map((logEntry) => logEntry.cid))
-    let doctype = new doc._doctypeHandler.doctype(null, doc._context) as T
-    doctype.state = resetState
-    doctype = DoctypeUtils.makeReadOnly<T>(doctype as T)
-    return new Document(id.baseID, doc.dispatcher, doc.pinStore, doc._validate, doc._context, doc._doctypeHandler, doctype)
+    return new Document(resetState, doc.dispatcher, doc.pinStore, doc._validate, doc._context, doc._doctypeHandler, true)
   }
 
   /**
@@ -193,15 +193,13 @@ class Document extends EventEmitter implements DocStateHolder {
       pinStore: PinStore,
       context: Context,
       validate: boolean) {
-    const doctype = new handler.doctype(null, context) as T
-
     const genesisCid = id.cid
     const commit = await dispatcher.retrieveCommit(genesisCid)
     if (commit == null) {
       throw new Error(`No genesis commit found with CID ${genesisCid.toString()}`)
     }
-    const doc = new Document(id, dispatcher, pinStore, validate, context, handler, doctype)
-    doc._doctype.state = await handler.applyCommit(commit, id.cid, context)
+    const state = await handler.applyCommit(commit, id.cid, context)
+    const doc = new Document(state, dispatcher, pinStore, validate, context, handler)
 
     if (validate) {
       const schema = await Document.loadSchema(context, doc._doctype)
