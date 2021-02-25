@@ -302,8 +302,9 @@ class Document extends EventEmitter implements DocStateHolder {
       await this._applyQueue.add(async () => {
         const log = await this._fetchLog(cid)
         if (log.length) {
-          const updated = await this._applyLog(log)
-          if (updated) {
+          const next = await this._applyLog(log)
+          if (next) {
+            this._doctype.state = next
             this._doctype.emit('change')
           }
         }
@@ -439,10 +440,10 @@ class Document extends EventEmitter implements DocStateHolder {
    * @return true if the log resulted in an update to this document's state, false if not
    * @private
    */
-  async _applyLog (log: Array<CID>): Promise<boolean> {
+  async _applyLog (log: Array<CID>): Promise<DocState | null> {
     if (log[log.length - 1].equals(this.tip)) {
       // log already applied
-      return false
+      return null
     }
     const cid = log[0]
     const commit = await this.dispatcher.retrieveCommit(cid)
@@ -452,8 +453,7 @@ class Document extends EventEmitter implements DocStateHolder {
     }
     if (payload.prev.equals(this.tip)) {
       // the new log starts where the previous one ended
-      this._doctype.state = await this._applyLogToState(log, cloneDeep(this.state)) // FIXME NEXT
-      return true
+      return this._applyLogToState(log, cloneDeep(this.state))
     }
 
     // we have a conflict since prev is in the log of the local state, but isn't the tip
@@ -462,19 +462,17 @@ class Document extends EventEmitter implements DocStateHolder {
     const canonicalLog = this.state.log.map(({cid}) => cid) // copy log
     const localLog = canonicalLog.splice(conflictIdx)
     // Compute state up till conflictIdx
-    let state: DocState = await this._applyLogToState(canonicalLog)
+    const state: DocState = await this._applyLogToState(canonicalLog)
     // Compute next transition in parallel
     const localState = await this._applyLogToState(localLog, cloneDeep(state), true)
     const remoteState = await this._applyLogToState(log, cloneDeep(state), true)
 
     const selectedState = await Document._pickLogToAccept(localState, remoteState)
     if (selectedState === localState) {
-      return false
+      return null
     }
 
-    state = await this._applyLogToState(log, cloneDeep(state))
-    this._doctype.state = state // FIXME NEXT
-    return true
+    return this._applyLogToState(log, cloneDeep(state))
   }
 
   /**
