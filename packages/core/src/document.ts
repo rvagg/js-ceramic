@@ -24,6 +24,7 @@ import { PinStore } from './store/pin-store';
 import { SubscriptionSet } from "./subscription-set";
 import { concatMap } from "rxjs/operators";
 import { DiagnosticsLogger } from "@ceramicnetwork/logger";
+import { BehaviorSubject } from 'rxjs'
 
 // DocOpts defaults for document load operations
 const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
@@ -35,6 +36,8 @@ const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
  */
 class Document extends EventEmitter implements DocStateHolder {
   readonly id: DocID
+
+  private readonly state$: BehaviorSubject<DocState>
   private _applyQueue: PQueue
 
   private _logger: DiagnosticsLogger
@@ -53,6 +56,11 @@ class Document extends EventEmitter implements DocStateHolder {
     const doctype = new _doctypeHandler.doctype(initialState, _context)
     this._doctype = readonly ? DoctypeUtils.makeReadOnly(doctype) : doctype
     this.id = new DocID(_doctypeHandler.name, initialState.log[0].cid)
+    this.state$ = new BehaviorSubject(initialState)
+    this.state$.subscribe(state => {
+      this._doctype.state = state
+    })
+
     this._logger = _context.loggerProvider.getDiagnosticsLogger()
 
     this._applyQueue = new PQueue({ concurrency: 1 })
@@ -92,7 +100,8 @@ class Document extends EventEmitter implements DocStateHolder {
       }
     }
 
-    return Document._syncDocumentToCurrent(doc, pinStore, opts)
+    await doc._syncDocumentToCurrent(pinStore, opts)
+    return doc
   }
 
   /**
@@ -117,30 +126,28 @@ class Document extends EventEmitter implements DocStateHolder {
     opts = {...DEFAULT_LOAD_DOCOPTS, ...opts}
 
     const doc = await Document._loadGenesis(id, handler, dispatcher, pinStore, context, validate)
-    return await Document._syncDocumentToCurrent(doc, pinStore, opts)
+    await doc._syncDocumentToCurrent(pinStore, opts)
+    return doc
   }
 
   /**
    * Takes a document containing only the genesis commit and kicks off the process to load and apply
    * the most recent Tip to it.
-   * @param doc - Document containing only the genesis commit
-   * @param pinStore
-   * @param opts
    * @private
    */
-  static async _syncDocumentToCurrent(doc: Document, pinStore: PinStore, opts: DocOpts): Promise<Document> {
+  async _syncDocumentToCurrent(pinStore: PinStore, opts: DocOpts): Promise<void> {
     // TODO: Assert that doc contains only the genesis commit
-    const id = doc.id
-
     // Update document state to cached state if any
-    const pinnedState = await pinStore.stateStore.load(id)
+    const pinnedState = await pinStore.stateStore.load(this.id)
     if (pinnedState) {
-      doc._doctype.state = pinnedState // FIXME NEXT
+      this.state$.next(pinnedState)
     }
 
-    // Request current tip from pub/sub system and register for future updates
-    await doc._register(opts)
-    return doc
+    this.on('update', this._update)
+
+    await this.dispatcher.register(this)
+
+    await this._applyOpts(opts)
   }
 
   /**
@@ -224,20 +231,6 @@ class Document extends EventEmitter implements DocStateHolder {
 
     await this._handleTip(cid)
     await this._updateStateIfPinned()
-    await this._applyOpts(opts)
-  }
-
-  /**
-   * Register document to the Dispatcher
-   *
-   * @param opts - Document initialization options (request anchor, wait, etc.)
-   * @private
-   */
-  async _register (opts: DocOpts): Promise<void> {
-    this.on('update', this._update)
-
-    await this.dispatcher.register(this)
-
     await this._applyOpts(opts)
   }
 
