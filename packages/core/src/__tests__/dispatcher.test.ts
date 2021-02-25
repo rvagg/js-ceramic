@@ -3,7 +3,7 @@ import CID from 'cids'
 import Document from "../document"
 import { TileDoctype } from "@ceramicnetwork/doctype-tile"
 import DocID from "@ceramicnetwork/docid";
-import { LoggerProvider } from "@ceramicnetwork/common";
+import { CommitType, DocState, LoggerProvider } from '@ceramicnetwork/common';
 import { serialize, MsgType } from '../pubsub/pubsub-message';
 import { Repository } from '../repository';
 import { delay } from '../pubsub/__tests__/delay';
@@ -30,13 +30,18 @@ const ipfs = {
   id: async () => ({ id: 'ipfsid' })
 }
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
 class TileDoctypeMock extends TileDoctype {
+  private _state = {
+    log: [{
+      cid: FAKE_CID,
+      type: CommitType.ANCHOR
+    }]
+  } as unknown as DocState
+
   get doctype() {
     return 'tile'
-  }
-
-  get tip() {
-    return FAKE_CID
   }
 }
 

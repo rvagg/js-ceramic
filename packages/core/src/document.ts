@@ -17,8 +17,8 @@ import {
   DoctypeUtils,
   DocMetadata,
   DocStateHolder,
-  UnreachableCaseError
-} from '@ceramicnetwork/common'
+  UnreachableCaseError, CommitType,
+} from '@ceramicnetwork/common';
 import DocID, { CommitID } from '@ceramicnetwork/docid';
 import { PinStore } from './store/pin-store';
 import { SubscriptionSet } from "./subscription-set";
@@ -273,7 +273,7 @@ class Document extends EventEmitter implements DocStateHolder {
   async _updateStateIfPinned(): Promise<void> {
     const isPinned = Boolean(await this.pinStore.stateStore.load(this.id))
     if (isPinned) {
-      await this.pinStore.add(this._doctype)
+      await this.pinStore.add(this)
     }
   }
 
@@ -324,7 +324,7 @@ class Document extends EventEmitter implements DocStateHolder {
    * @private
    */
   async _fetchLog (cid: CID, log: Array<CID> = []): Promise<Array<CID>> {
-    if (await this._isCidIncluded(cid, this._doctype.state.log)) { // already processed
+    if (await this._isCidIncluded(cid, this.state.log)) { // already processed
       return []
     }
     const commit = await this.dispatcher.retrieveCommit(cid)
@@ -344,7 +344,7 @@ class Document extends EventEmitter implements DocStateHolder {
       return []
     }
     log.unshift(cid)
-    if (await this._isCidIncluded(prevCid, this._doctype.state.log)) {
+    if (await this._isCidIncluded(prevCid, this.state.log)) {
       // we found the connection to the canonical log
       return log
     }
@@ -455,14 +455,14 @@ class Document extends EventEmitter implements DocStateHolder {
     }
     if (payload.prev.equals(this.tip)) {
       // the new log starts where the previous one ended
-      this._doctype.state = await this._applyLogToState(log, cloneDeep(this._doctype.state))
+      this._doctype.state = await this._applyLogToState(log, cloneDeep(this.state))
       return true
     }
 
     // we have a conflict since prev is in the log of the local state, but isn't the tip
     // BEGIN CONFLICT RESOLUTION
-    const conflictIdx = await this._findIndex(payload.prev, this._doctype.state.log) + 1
-    const canonicalLog = this._doctype.state.log.map(({cid}) => cid) // copy log
+    const conflictIdx = await this._findIndex(payload.prev, this.state.log) + 1
+    const canonicalLog = this.state.log.map(({cid}) => cid) // copy log
     const localLog = canonicalLog.splice(conflictIdx)
     // Compute state up till conflictIdx
     let state: DocState = await this._applyLogToState(canonicalLog)
@@ -660,7 +660,7 @@ class Document extends EventEmitter implements DocStateHolder {
    * Gets document content
    */
   get content (): any {
-    const { next, content } = this._doctype.state
+    const { next, content } = this.state
     return next?.content ?? content
   }
 
@@ -682,33 +682,36 @@ class Document extends EventEmitter implements DocStateHolder {
    * Gets document Tip commit CID
    */
   get tip (): CID {
-    return this._doctype.tip
+    return this.state.log[this.state.log.length - 1].cid
   }
 
   /**
    * Gets document controllers
    */
   get controllers (): string[] {
-    return this._doctype.controllers
+    return this.metadata.controllers
   }
 
   /**
    * Gets document metadata
    */
   get metadata (): DocMetadata {
-    return this._doctype.metadata
+    const { next, metadata } = this.state
+    return cloneDeep(next?.metadata ?? metadata)
   }
 
   get commitId(): CommitID {
-    return this._doctype.commitId
+    return this.id.atCommit(this.tip)
   }
 
   get allCommitIds(): Array<CommitID> {
-    return this._doctype.allCommitIds
+    return this.state.log.map(({ cid }) => this.id.atCommit(cid))
   }
 
   get anchorCommitIds(): Array<CommitID> {
-    return this._doctype.anchorCommitIds
+    return this.state.log
+      .filter(({ type }) => type === CommitType.ANCHOR)
+      .map(({ cid }) => this.id.atCommit(cid))
   }
 
   /**
@@ -749,7 +752,7 @@ class Document extends EventEmitter implements DocStateHolder {
    * Serializes the document content
    */
   toString (): string {
-    return JSON.stringify(this._doctype.state.content)
+    return JSON.stringify(this.state.content)
   }
 }
 
