@@ -35,24 +35,16 @@ const ipfs = {
   id: async () => ({ id: 'ipfsid' })
 }
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-class TileDoctypeMock extends TileDoctype {
-  private _state = {
-    log: [{
-      cid: FAKE_CID,
-      type: CommitType.ANCHOR
-    }]
-  } as unknown as DocState
-
-  get doctype() {
-    return 'tile'
-  }
-}
+const MOCK_STATE = {
+  log: [{
+    cid: FAKE_CID,
+    type: CommitType.ANCHOR
+  }]
+} as unknown as DocState
 
 const fakeHandler  = {
   name: 'tile',
-  doctype: TileDoctypeMock
+  doctype: TileDoctype
 } as unknown as DoctypeHandler<TileDoctype>
 
 describe('Dispatcher', () => {
@@ -89,7 +81,7 @@ describe('Dispatcher', () => {
 
   it('makes registration correctly', async () => {
     const doc = new Document(
-      null,
+      MOCK_STATE,
       dispatcher,
       null,
       false,
@@ -135,7 +127,7 @@ describe('Dispatcher', () => {
 
   it('handle message correctly', async () => {
     const doc = new Document(
-      null,
+      MOCK_STATE,
       dispatcher,
       null,
       false,

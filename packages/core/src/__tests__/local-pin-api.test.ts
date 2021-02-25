@@ -23,7 +23,7 @@ async function toArray<A>(iterable: AsyncIterable<A>): Promise<A[]> {
 test('add', async () => {
   await pinApi.add(DOC_ID);
   expect(loadDoc).toBeCalledWith(DOC_ID);
-  expect(pinStore.add).toBeCalledWith(document.doctype);
+  expect(pinStore.add).toBeCalledWith(document);
 });
 
 test('rm', async () => {
