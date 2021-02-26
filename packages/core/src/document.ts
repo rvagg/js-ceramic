@@ -144,6 +144,57 @@ async function fetchLog(retrieveCommit: RetrieveCommitFunc, cid: CID, state: Doc
 }
 
 /**
+ * Given two different DocStates representing two different conflicting histories of the same
+ * document, pick which commit to accept, in accordance with our conflict resolution strategy
+ * @param state1 - first log's state
+ * @param state2 - second log's state
+ * @returns the DocState containing the log that is selected
+ */
+export async function pickLogToAccept(state1: DocState, state2: DocState): Promise<DocState> {
+  const isState1Anchored = state1.anchorStatus === AnchorStatus.ANCHORED
+  const isState2Anchored = state2.anchorStatus === AnchorStatus.ANCHORED
+
+  if (isState1Anchored != isState2Anchored) {
+    // When one of the logs is anchored but not the other, take the one that is anchored
+    return isState1Anchored ? state1 : state2
+  }
+
+  if (isState1Anchored && isState2Anchored) {
+    // compare anchor proofs if both states are anchored
+    const { anchorProof: proof1 } = state1
+    const { anchorProof: proof2 } = state2
+
+    if (proof1.chainId != proof2.chainId) {
+      // TODO: Add logic to handle conflicting updates anchored on different chains
+      throw new Error("Conflicting logs on the same document are anchored on different chains. Chain1: " +
+        proof1.chainId + ", chain2: " + proof2.chainId)
+    }
+
+    // Compare block heights to decide which to take
+    if (proof1.blockNumber < proof2.blockNumber) {
+      return state1
+    } else if (proof2.blockNumber < proof1.blockNumber) {
+      return state2
+    }
+    // If they have the same block number fall through to fallback mechanism
+  }
+
+  // The anchor states are the same for both logs. Compare log lengths and choose the one with longer length.
+  if (state1.log.length > state2.log.length) {
+    return state1
+  } else if (state1.log.length < state2.log.length) {
+    return state2
+  }
+
+  // If we got this far, that means that we don't have sufficient information to make a good
+  // decision about which log to choose.  The most common way this can happen is that neither log
+  // is anchored, although it can also happen if both are anchored but in the same blockNumber or
+  // blockTimestamp. At this point, the decision of which log to take is arbitrary, but we want it
+  // to still be deterministic. Therefore, we take the log whose last entry has the lowest CID.
+  return state1.log[state1.log.length - 1].cid.bytes < state2.log[state2.log.length - 1].cid.bytes ? state1 : state2
+}
+
+/**
  * Document handles the update logic of the Doctype instance
  */
 export class Document extends EventEmitter implements DocStateHolder {
@@ -385,58 +436,6 @@ export class Document extends EventEmitter implements DocStateHolder {
   }
 
   /**
-   * Given two different DocStates representing two different conflicting histories of the same
-   * document, pick which commit to accept, in accordance with our conflict resolution strategy
-   * @param state1 - first log's state
-   * @param state2 - second log's state
-   * @returns the DocState containing the log that is selected
-   * @private
-   */
-  static async _pickLogToAccept(state1: DocState, state2: DocState): Promise<DocState> {
-    const isState1Anchored = state1.anchorStatus === AnchorStatus.ANCHORED
-    const isState2Anchored = state2.anchorStatus === AnchorStatus.ANCHORED
-
-    if (isState1Anchored != isState2Anchored) {
-      // When one of the logs is anchored but not the other, take the one that is anchored
-      return isState1Anchored ? state1 : state2
-    }
-
-    if (isState1Anchored && isState2Anchored) {
-      // compare anchor proofs if both states are anchored
-      const { anchorProof: proof1 } = state1
-      const { anchorProof: proof2 } = state2
-
-      if (proof1.chainId != proof2.chainId) {
-        // TODO: Add logic to handle conflicting updates anchored on different chains
-        throw new Error("Conflicting logs on the same document are anchored on different chains. Chain1: " +
-            proof1.chainId + ", chain2: " + proof2.chainId)
-      }
-
-      // Compare block heights to decide which to take
-      if (proof1.blockNumber < proof2.blockNumber) {
-        return state1
-      } else if (proof2.blockNumber < proof1.blockNumber) {
-        return state2
-      }
-      // If they have the same block number fall through to fallback mechanism
-    }
-
-    // The anchor states are the same for both logs. Compare log lengths and choose the one with longer length.
-    if (state1.log.length > state2.log.length) {
-      return state1
-    } else if (state1.log.length < state2.log.length) {
-      return state2
-    }
-
-    // If we got this far, that means that we don't have sufficient information to make a good
-    // decision about which log to choose.  The most common way this can happen is that neither log
-    // is anchored, although it can also happen if both are anchored but in the same blockNumber or
-    // blockTimestamp. At this point, the decision of which log to take is arbitrary, but we want it
-    // to still be deterministic. Therefore, we take the log whose last entry has the lowest CID.
-    return state1.log[state1.log.length - 1].cid.bytes < state2.log[state2.log.length - 1].cid.bytes ? state1 : state2
-  }
-
-  /**
    * Applies the log to the document
    *
    * @param log - Log of commit CIDs
@@ -470,7 +469,7 @@ export class Document extends EventEmitter implements DocStateHolder {
     const localState = await this._applyLogToState(localLog, cloneDeep(state), true)
     const remoteState = await this._applyLogToState(log, cloneDeep(state), true)
 
-    const selectedState = await Document._pickLogToAccept(localState, remoteState)
+    const selectedState = await pickLogToAccept(localState, remoteState)
     if (selectedState === localState) {
       return null
     }
