@@ -25,6 +25,7 @@ import { SubscriptionSet } from "./subscription-set";
 import { concatMap } from "rxjs/operators";
 import { DiagnosticsLogger } from "@ceramicnetwork/logger";
 import { BehaviorSubject } from 'rxjs'
+import { validateState } from './validate-state';
 
 // DocOpts defaults for document load operations
 const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
@@ -32,45 +33,6 @@ const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
 const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
 
 type RetrieveCommitFunc = (cid: CID | string, path?: string) => any
-
-/**
- * Loads schema by ID
- *
- * @param context - Ceramic context
- * @param schemaDocId - Schema document ID
- */
-async function loadSchemaById<T extends any>(context: Context, schemaDocId: string): Promise<T | null> {
-  let commitId: CommitID;
-  try {
-    commitId = CommitID.fromString(schemaDocId);
-  } catch {
-    throw new Error('Commit missing when loading schema document');
-  }
-  const schemaDoc = await context.api.loadDocument(commitId);
-  return schemaDoc.content;
-}
-
-/**
- * Loads schema for the Doctype
- */
-async function loadSchema<T extends any>(context: Context, state: DocState): Promise<T | null> {
-  const schemaId = state.metadata?.schema
-  if (schemaId) {
-    return loadSchemaById(context, schemaId)
-  } else {
-    return null
-  }
-}
-
-/**
- * Validate Document against its schema.
- */
-async function validateDocument(document: Document, context: Context) {
-  const schema = await loadSchema(context, document.state)
-  if (schema) {
-    Utils.validate(document.content, schema)
-  }
-}
 
 /**
  * Find index of the commit in the array. If the commit is signed, fetch the payload
@@ -322,7 +284,7 @@ export class Document extends EventEmitter implements DocStateHolder {
     const document = new Document(state, dispatcher, pinStore, validate, context, handler)
 
     if (validate) {
-      await validateDocument(document, context)
+      await validateState(document.state, document.content, context.api)
     }
 
     await document._syncDocumentToCurrent(pinStore, opts)
@@ -545,13 +507,7 @@ export class Document extends EventEmitter implements DocStateHolder {
         const isGenesis = !payload.prev
         const effectiveState = isGenesis ? tmpState : tmpState.next
         if (this._validate) {
-          const schemaId = effectiveState.metadata.schema
-          if (schemaId) {
-            const schema = await loadSchemaById(this._context, schemaId)
-            if (schema) {
-              Utils.validate(effectiveState.content, schema)
-            }
-          }
+          await validateState(effectiveState, effectiveState.content, this._context.api)
         }
         state = tmpState // if validation is successful
       }
