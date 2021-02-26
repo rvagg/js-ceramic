@@ -589,7 +589,7 @@ export class Document extends EventEmitter implements DocStateHolder {
                 }
                 case AnchorStatus.FAILED: {
                   if (!asr.cid.equals(this.tip)) {
-                    return; // TODO Check if this comparison is still required
+                    return;
                   }
                   this.state$.next({ ...this.state, anchorStatus: AnchorStatus.FAILED })
                   subscription.unsubscribe();
