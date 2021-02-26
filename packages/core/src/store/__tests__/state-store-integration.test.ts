@@ -1,6 +1,6 @@
 import tmp from 'tmp-promise'
 import { Document } from "../../document"
-import Dispatcher from "../../dispatcher"
+import { Dispatcher } from "../../dispatcher"
 import {Doctype, LoggerProvider} from "@ceramicnetwork/common"
 import { AnchorService } from "@ceramicnetwork/common"
 import { Context } from "@ceramicnetwork/common"
