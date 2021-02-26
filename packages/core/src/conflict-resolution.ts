@@ -135,6 +135,11 @@ export class HistoryLog {
     return this.findIndex(cid).then((index) => index !== -1);
   }
 
+  @Memoize()
+  get last(): CID {
+    return this.items[this.items.length - 1];
+  }
+
   /**
    * Find index of the commit in the array. If the commit is signed, fetch the payload
    *
@@ -257,7 +262,8 @@ export class ConflictResolution {
    * @private
    */
   async applyLog(initialState: DocState, log: Array<CID>): Promise<DocState | null> {
-    const tip = initialState.log[initialState.log.length - 1].cid;
+    const initialStateLog = HistoryLog.fromState(this.dispatcher, initialState);
+    const tip = initialStateLog.last;
     if (log[log.length - 1].equals(tip)) {
       // log already applied
       return null;
@@ -276,7 +282,7 @@ export class ConflictResolution {
     // we have a conflict since prev is in the log of the local state, but isn't the tip
     // BEGIN CONFLICT RESOLUTION
     const conflictIdx = (await this.findIndex(payload.prev, initialState.log)) + 1; // FIXME NOW
-    const canonicalLog = initialState.log.map(({ cid }) => cid); // copy log
+    const canonicalLog = initialStateLog.items;
     const localLog = canonicalLog.splice(conflictIdx);
     // Compute state up till conflictIdx
     const state: DocState = await this.applyLogToState(canonicalLog);
