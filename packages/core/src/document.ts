@@ -81,16 +81,16 @@ export class Document extends EventEmitter implements DocStateHolder {
   _doctype: Doctype
 
   constructor (initialState: DocState,
-               public dispatcher: Dispatcher,
-               public pinStore: PinStore,
-               private _validate: boolean,
-               private _context: Context,
-               private _doctypeHandler: DoctypeHandler<Doctype>,
+               readonly dispatcher: Dispatcher,
+               readonly pinStore: PinStore,
+               private readonly _validate: boolean,
+               private readonly _context: Context,
+               private readonly handler: DoctypeHandler<Doctype>,
                readonly = false) {
     super()
-    const doctype = new _doctypeHandler.doctype(initialState, _context)
-    this._doctype = readonly ? DoctypeUtils.makeReadOnly(doctype) : doctype
-    this.id = new DocID(_doctypeHandler.name, initialState.log[0].cid)
+    const doctype = new handler.doctype(initialState, _context)
+    this._doctype = readonly ? DoctypeUtils.makeReadOnly(doctype) : doctype // FIXME NEXT Snapshot vs Running
+    this.id = new DocID(handler.name, initialState.log[0].cid)
     this.state$ = new BehaviorSubject(initialState)
     // FIXME NEXT distinct only
     this.state$.subscribe(state => {
@@ -211,7 +211,7 @@ export class Document extends EventEmitter implements DocStateHolder {
     // to reset the state to the state at the requested commit.
     const resetLog = doc.state.log.slice(0, commitIndex + 1)
     const resetState = await doc._applyLogToState(resetLog.map((logEntry) => logEntry.cid))
-    return new Document(resetState, doc.dispatcher, doc.pinStore, doc._validate, doc._context, doc._doctypeHandler, true)
+    return new Document(resetState, doc.dispatcher, doc.pinStore, doc._validate, doc._context, doc.handler, true)
   }
 
   /**
@@ -490,10 +490,10 @@ export class Document extends EventEmitter implements DocStateHolder {
       if (payload.proof) {
         // it's an anchor commit
         await this._verifyAnchorCommit(commit)
-        state = await this._doctypeHandler.applyCommit(commit, cid, this._context, state)
+        state = await this.handler.applyCommit(commit, cid, this._context, state)
       } else {
         // it's a signed commit
-        const tmpState = await this._doctypeHandler.applyCommit(commit, cid, this._context, state)
+        const tmpState = await this.handler.applyCommit(commit, cid, this._context, state)
         const isGenesis = !payload.prev
         const effectiveState = isGenesis ? tmpState : tmpState.next
         if (this._validate) {
@@ -616,7 +616,7 @@ export class Document extends EventEmitter implements DocStateHolder {
    * Gets document state
    */
   get state (): DocState {
-    return this._doctype.state
+    return this.state$.value
   }
 
   /**
