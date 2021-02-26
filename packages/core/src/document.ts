@@ -13,9 +13,8 @@ import {
   DocOpts,
   Context,
   DoctypeUtils,
-  DocMetadata,
   DocStateHolder,
-  UnreachableCaseError, CommitType,
+  UnreachableCaseError,
 } from '@ceramicnetwork/common';
 import DocID, { CommitID } from '@ceramicnetwork/docid';
 import { PinStore } from './store/pin-store';
@@ -431,29 +430,9 @@ export class Document extends EventEmitter implements DocStateHolder {
    * Gets document controllers
    */
   get controllers (): string[] {
-    return this.metadata.controllers
-  }
-
-  /**
-   * Gets document metadata
-   */
-  get metadata (): DocMetadata {
-    const { next, metadata } = this.state
-    return cloneDeep(next?.metadata ?? metadata)
-  }
-
-  get commitId(): CommitID {
-    return this.id.atCommit(this.tip)
-  }
-
-  get allCommitIds(): Array<CommitID> {
-    return this.state.log.map(({ cid }) => this.id.atCommit(cid))
-  }
-
-  get anchorCommitIds(): Array<CommitID> {
-    return this.state.log
-      .filter(({ type }) => type === CommitType.ANCHOR)
-      .map(({ cid }) => this.id.atCommit(cid))
+    const { next, metadata: currentMetadata } = this.state
+    const metadata = cloneDeep(next?.metadata ?? currentMetadata)
+    return metadata.controllers
   }
 
   /**
