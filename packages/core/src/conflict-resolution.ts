@@ -14,9 +14,7 @@ import {
 import { validateState } from './validate-state';
 import { Dispatcher } from './dispatcher';
 import cloneDeep from 'lodash.clonedeep';
-import { findIndex } from './document';
-
-type RetrieveCommitFunc = (cid: CID | string, path?: string) => any;
+import { Memoize } from 'typescript-memoize';
 
 /**
  * Verifies anchor commit structure
@@ -115,7 +113,27 @@ export async function pickLogToAccept(state1: DocState, state2: DocState): Promi
 }
 
 export class HistoryLog {
-  constructor(private readonly dispatcher: Dispatcher, private readonly entries: LogEntry[]) {}
+  static fromState(dispatcher: Dispatcher, state: DocState): HistoryLog {
+    return new HistoryLog(
+      dispatcher,
+      state.log.map((_) => _.cid),
+    );
+  }
+
+  constructor(private readonly dispatcher: Dispatcher, readonly items: CID[]) {}
+
+  @Memoize()
+  get length(): number {
+    return this.items.length;
+  }
+
+  /**
+   * Determines if the HistoryLog includes a CID, returning true or false as appropriate.
+   */
+  @Memoize()
+  async includes(cid: CID): Promise<boolean> {
+    return this.findIndex(cid).then((index) => index !== -1);
+  }
 
   /**
    * Find index of the commit in the array. If the commit is signed, fetch the payload
@@ -123,9 +141,10 @@ export class HistoryLog {
    * @param cid - CID value
    * @private
    */
+  @Memoize()
   async findIndex(cid: CID): Promise<number> {
-    for (let index = 0; index < this.entries.length; index++) {
-      const current = this.entries[index].cid;
+    for (let index = 0; index < this.items.length; index++) {
+      const current = this.items[index];
       if (current.equals(cid)) {
         return index;
       }
@@ -136,25 +155,6 @@ export class HistoryLog {
     }
     return -1;
   }
-
-  /**
-   * Return CIDs of the log entries
-   */
-  get cids(): CID[] {
-    return this.entries.map((_) => _.cid);
-  }
-}
-
-/**
- * Is CID included in the log. If the commit is signed, fetch the payload
- *
- * @param dispatcher - Get commit from IPFS
- * @param cid - CID value
- * @param log - Log array
- * @private
- */
-export async function isCidIncluded(dispatcher: Dispatcher, cid: CID, log: Array<LogEntry>): Promise<boolean> {
-  return findIndex(dispatcher.retrieveCommit.bind(dispatcher), cid, log).then(index => index !== -1)
 }
 
 /**
@@ -162,12 +162,18 @@ export async function isCidIncluded(dispatcher: Dispatcher, cid: CID, log: Array
  *
  * @param dispatcher - Get commit from IPFS
  * @param cid - Commit CID
- * @param state - Current Document State
+ * @param stateLog - Log from the current document state
  * @param log - Found log so far
  * @private
  */
-export async function fetchLog(dispatcher: Dispatcher, cid: CID, state: DocState, log: Array<CID> = []): Promise<Array<CID>> {
-  if (await isCidIncluded(dispatcher, cid, state.log)) { // already processed
+export async function fetchLog(
+  dispatcher: Dispatcher,
+  cid: CID,
+  stateLog: HistoryLog,
+  log: CID[] = [],
+): Promise<CID[]> {
+  if (await stateLog.includes(cid)) {
+    // already processed
     return [];
   }
   const commit = await dispatcher.retrieveCommit(cid);
@@ -183,15 +189,16 @@ export async function fetchLog(dispatcher: Dispatcher, cid: CID, state: DocState
     }
   }
   const prevCid: CID = payload.prev;
-  if (!prevCid) { // this is a fake log
+  if (!prevCid) {
+    // this is a fake log
     return [];
   }
-  log.unshift(cid);
-  if (await isCidIncluded(dispatcher, prevCid, state.log)) {
+  log.push(cid); // Should be unshift [O(N)], but push [O(1)] + reverse [O(N)] seem better
+  if (await stateLog.includes(prevCid)) {
     // we found the connection to the canonical log
-    return log;
+    return log.reverse();
   }
-  return fetchLog(dispatcher, prevCid, state, log);
+  return fetchLog(dispatcher, prevCid, stateLog, log);
 }
 
 export class ConflictResolution {
@@ -286,7 +293,8 @@ export class ConflictResolution {
   }
 
   async applyTip(initialState: DocState, tip: CID): Promise<DocState | null> {
-    const log = await fetchLog(this.dispatcher, tip, initialState);
+    const stateLog = HistoryLog.fromState(this.dispatcher, initialState);
+    const log = await fetchLog(this.dispatcher, tip, stateLog);
     if (log.length) {
       return this.applyLog(initialState, log);
     }
