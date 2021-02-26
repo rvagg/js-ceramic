@@ -9,12 +9,12 @@ import {
   Doctype,
   DoctypeHandler,
   DoctypeUtils,
-  LogEntry,
 } from '@ceramicnetwork/common';
 import { validateState } from './validate-state';
 import { Dispatcher } from './dispatcher';
 import cloneDeep from 'lodash.clonedeep';
 import { Memoize } from 'typescript-memoize';
+import { CommitID } from '@ceramicnetwork/docid';
 
 /**
  * Verifies anchor commit structure
@@ -144,7 +144,6 @@ export class HistoryLog {
    * Find index of the commit in the array. If the commit is signed, fetch the payload
    *
    * @param cid - CID value
-   * @private
    */
   @Memoize()
   async findIndex(cid: CID): Promise<number> {
@@ -159,6 +158,11 @@ export class HistoryLog {
       }
     }
     return -1;
+  }
+
+  slice(start?: number, end?: number): HistoryLog {
+    const next = this.items.slice(start, end);
+    return new HistoryLog(this.dispatcher, next);
   }
 }
 
@@ -254,15 +258,12 @@ export class ConflictResolution {
   }
 
   /**
-   * Applies the log to the document
-   *
-   * @param initialState
-   * @param log - Log of commit CIDs
-   * @return true if the log resulted in an update to this document's state, false if not
-   * @private
+   * Applies the log to the state.
+   * @param initialState - State to apply log to.
+   * @param initialStateLog - HistoryLog representation of the `initialState.log`
+   * @param log - commits to apply
    */
-  async applyLog(initialState: DocState, log: Array<CID>): Promise<DocState | null> {
-    const initialStateLog = HistoryLog.fromState(this.dispatcher, initialState);
+  async applyLog(initialState: DocState, initialStateLog: HistoryLog, log: Array<CID>): Promise<DocState | null> {
     const tip = initialStateLog.last;
     if (log[log.length - 1].equals(tip)) {
       // log already applied
@@ -281,7 +282,7 @@ export class ConflictResolution {
 
     // we have a conflict since prev is in the log of the local state, but isn't the tip
     // BEGIN CONFLICT RESOLUTION
-    const conflictIdx = (await this.findIndex(payload.prev, initialState.log)) + 1; // FIXME NOW
+    const conflictIdx = await initialStateLog.findIndex(payload.prev).then((i) => i + 1);
     const canonicalLog = initialStateLog.items;
     const localLog = canonicalLog.splice(conflictIdx);
     // Compute state up till conflictIdx
@@ -298,32 +299,42 @@ export class ConflictResolution {
     return this.applyLogToState(log, cloneDeep(state));
   }
 
+  /**
+   * Add tip to the state. Return null if already applied.
+   *
+   * @param initialState - State to start from
+   * @param tip - Commit CID
+   */
   async applyTip(initialState: DocState, tip: CID): Promise<DocState | null> {
     const stateLog = HistoryLog.fromState(this.dispatcher, initialState);
     const log = await fetchLog(this.dispatcher, tip, stateLog);
     if (log.length) {
-      return this.applyLog(initialState, log);
+      return this.applyLog(initialState, stateLog, log);
     }
   }
 
   /**
-   * Find index of the commit in the array. If the commit is signed, fetch the payload
-   *
-   * @param cid - CID value
-   * @param log - Log array
-   * @private
+   * Return state at `commitId` version.
    */
-  async findIndex(cid: CID, log: Array<LogEntry>): Promise<number> {
-    for (let index = 0; index < log.length; index++) {
-      const c = log[index].cid;
-      if (c.equals(cid)) {
-        return index;
-      }
-      const commit = await this.dispatcher.retrieveCommit(c);
-      if (DoctypeUtils.isSignedCommit(commit) && commit.link.equals(cid)) {
-        return index;
-      }
+  async rewind(initialState: DocState, commitId: CommitID) {
+    // If 'commit' is ahead of 'doc', sync doc up to 'commit'
+    const baseState = (await this.applyTip(initialState, commitId.commit)) || initialState;
+
+    const baseStateLog = HistoryLog.fromState(this.dispatcher, baseState);
+
+    // If 'commit' is not included in doc's log at this point, that means that conflict resolution
+    // rejected it.
+    // const commitIndex = await doc._findIndex(id.commit, doc.state.log)
+    const commitIndex = await baseStateLog.findIndex(commitId.commit);
+    if (commitIndex < 0) {
+      throw new Error(
+        `Requested commit CID ${commitId.commit.toString()} not found in the log for document ${commitId.baseID.toString()}`,
+      );
     }
-    return -1;
+
+    // If the requested commit is included in the log, but isn't the most recent commit, we need
+    // to reset the state to the state at the requested commit.
+    const resetLog = baseStateLog.slice(0, commitIndex + 1).items;
+    return this.applyLogToState(resetLog);
   }
 }
