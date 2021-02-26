@@ -148,36 +148,36 @@ export class HistoryLog {
 /**
  * Is CID included in the log. If the commit is signed, fetch the payload
  *
- * @param retrieveCommit - Get commit from IPFS
+ * @param dispatcher - Get commit from IPFS
  * @param cid - CID value
  * @param log - Log array
  * @private
  */
-export async function isCidIncluded(retrieveCommit: RetrieveCommitFunc, cid: CID, log: Array<LogEntry>): Promise<boolean> {
-  return findIndex(retrieveCommit, cid, log).then(index => index !== -1)
+export async function isCidIncluded(dispatcher: Dispatcher, cid: CID, log: Array<LogEntry>): Promise<boolean> {
+  return findIndex(dispatcher.retrieveCommit.bind(dispatcher), cid, log).then(index => index !== -1)
 }
 
 /**
  * Fetch log to find a connection for the given CID
  *
- * @param retrieveCommit - Get commit from IPFS
+ * @param dispatcher - Get commit from IPFS
  * @param cid - Commit CID
  * @param state - Current Document State
  * @param log - Found log so far
  * @private
  */
-export async function fetchLog(retrieveCommit: RetrieveCommitFunc, cid: CID, state: DocState, log: Array<CID> = []): Promise<Array<CID>> {
-  if (await isCidIncluded(retrieveCommit, cid, state.log)) { // already processed
+export async function fetchLog(dispatcher: Dispatcher, cid: CID, state: DocState, log: Array<CID> = []): Promise<Array<CID>> {
+  if (await isCidIncluded(dispatcher, cid, state.log)) { // already processed
     return [];
   }
-  const commit = await retrieveCommit(cid);
+  const commit = await dispatcher.retrieveCommit(cid);
   if (commit == null) {
     throw new Error(`No commit found for CID ${cid.toString()}`);
   }
 
   let payload = commit;
   if (DoctypeUtils.isSignedCommit(commit)) {
-    payload = await retrieveCommit(commit.link);
+    payload = await dispatcher.retrieveCommit(commit.link);
     if (payload == null) {
       throw new Error(`No commit found for CID ${commit.link.toString()}`);
     }
@@ -187,11 +187,11 @@ export async function fetchLog(retrieveCommit: RetrieveCommitFunc, cid: CID, sta
     return [];
   }
   log.unshift(cid);
-  if (await isCidIncluded(retrieveCommit, prevCid, state.log)) {
+  if (await isCidIncluded(dispatcher, prevCid, state.log)) {
     // we found the connection to the canonical log
     return log;
   }
-  return fetchLog(retrieveCommit, prevCid, state, log);
+  return fetchLog(dispatcher, prevCid, state, log);
 }
 
 export class ConflictResolution {
@@ -286,7 +286,7 @@ export class ConflictResolution {
   }
 
   async applyTip(initialState: DocState, tip: CID): Promise<DocState | null> {
-    const log = await fetchLog(this.dispatcher.retrieveCommit.bind(this.dispatcher), tip, initialState);
+    const log = await fetchLog(this.dispatcher, tip, initialState);
     if (log.length) {
       return this.applyLog(initialState, log);
     }
