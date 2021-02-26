@@ -35,7 +35,7 @@ jest.mock('../dispatcher', () => {
     const body = u8a.concat([u8a.fromString('1220', 'base16'), sha256.hash(u8a.fromString(data))])
     return new CID(1, 'sha2-256', body)
   }
-  return (gossip: boolean): any => {
+  const Dispatcher = (gossip: boolean): any => {
     const recs: Record<any, any> = {}
     const docs: Record<string, Document> = {}
     return {
@@ -99,6 +99,7 @@ jest.mock('../dispatcher', () => {
       init: jest.fn(),
     }
   }
+  return { Dispatcher }
 })
 
 const anchorUpdate = async (anchorService: InMemoryAnchorService, doc: Document): Promise<void> => {
