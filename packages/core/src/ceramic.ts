@@ -463,33 +463,9 @@ class Ceramic implements CeramicApi {
    * @param opts - Initialization options
    */
   async createDocument<T extends Doctype>(doctype: string, params: DocParams, opts?: DocOpts): Promise<T> {
-    const doc = await this._createDoc(doctype, params, opts)
-    return doc.doctype as T
-  }
-
-  /**
-   * Create document instance
-   * @param doctype - Document type
-   * @param params - Create parameters
-   * @param opts - Initialization options
-   * @private
-   */
-  async _createDoc(doctype: string, params: DocParams, opts: DocOpts = {}): Promise<Document> {
-    const doctypeHandler = this._doctypeHandlers[doctype]
-
-    const genesis = await doctypeHandler.doctype.makeGenesis(params, this.context, opts)
-    const genesisCid = await this.dispatcher.storeCommit(genesis)
-    const docId = new DocID(doctype, genesisCid)
-
-    if (await this._repository.has(docId)) {
-      this._logger.verbose(`Document ${docId.toString()} loaded from cache`)
-      return this._repository.get(docId)
-    } else {
-      const document = await Document.create(docId, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
-      // this.repository.add(document) TODO See Document#register, it adds to the repository too
-      this._logger.verbose(`Document ${docId.toString()} successfully created`)
-      return document
-    }
+    const handler = this.handler(doctype)
+    const genesis = await handler.doctype.makeGenesis(params, this.context, opts)
+    return this.createDocumentFromGenesis(doctype, genesis, opts)
   }
 
   /**
@@ -499,33 +475,18 @@ class Ceramic implements CeramicApi {
    * @param opts - Initialization options
    */
   async createDocumentFromGenesis<T extends Doctype>(doctype: string, genesis: any, opts: DocOpts = {}): Promise<T> {
-    const doc = await this._createDocFromGenesis(doctype, genesis, opts)
-    this._logger.verbose(`Document ${doc.id.toString()} successfully created from genesis contents`)
-    return doc.doctype as T
-  }
-
-  /**
-   * Creates document from genesis record
-   * @param doctype - Document type
-   * @param genesis - Genesis record
-   * @param opts - Initialization options
-   * @private
-   */
-  async _createDocFromGenesis(doctype: string, genesis: any, opts: DocOpts = {}): Promise<Document> {
+    const handler = this.handler(doctype)
     const genesisCid = await this.dispatcher.storeCommit(genesis)
-    const doctypeHandler = this._doctypeHandlers[doctype]
-    if (!doctypeHandler) {
-      throw new Error(doctype + " is not a valid doctype")
-    }
-
     const docId = new DocID(doctype, genesisCid)
-
-    if (await this._repository.has(docId)) {
-      return this._repository.get(docId)
+    if (await this._repository.has(docId)) { // FIXME NEXT DRY
+      this._logger.verbose(`Document ${docId.toString()} loaded from cache`)
+      const document = await this._repository.get(docId)
+      return document.doctype as T
     } else {
-      const document = await Document.create(docId, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
+      const document = await Document.create(docId, handler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
       // this.repository.add(document) TODO See Document#register, it adds to the repository too
-      return document
+      this._logger.verbose(`Document ${docId.toString()} successfully created`)
+      return document.doctype as T
     }
   }
 
@@ -635,10 +596,7 @@ class Ceramic implements CeramicApi {
       doc = await this._repository.get(docRef.baseID)
     } else {
       // Load the current version of the document
-      const doctypeHandler = this._doctypeHandlers[docRef.typeName]
-      if (!doctypeHandler) {
-        throw new Error(docRef.typeName + " is not a valid doctype")
-      }
+      const doctypeHandler = this.handler(docRef.typeName)
       doc = await Document.load(docRef.baseID, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts)
       this._repository.add(doc)
     }
@@ -649,6 +607,15 @@ class Ceramic implements CeramicApi {
     } else {
       // Here CommitID is requested, let's return document at specific commit
       return Document.loadAtCommit(docRef, doc)
+    }
+  }
+
+  private handler(doctypeName: string): DoctypeHandler<Doctype> {
+    const handler = this._doctypeHandlers[doctypeName]
+    if (handler) {
+      return handler
+    } else {
+      throw new Error(doctypeName + " is not a valid doctype")
     }
   }
 
