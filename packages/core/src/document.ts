@@ -40,7 +40,7 @@ type RetrieveCommitFunc = (cid: CID | string, path?: string) => any
  * @param log - Log array
  * @private
  */
-async function findIndex(retrieveCommit: RetrieveCommitFunc, cid: CID, log: Array<LogEntry>): Promise<number> { // FIXME NOW
+export async function findIndex(retrieveCommit: RetrieveCommitFunc, cid: CID, log: Array<LogEntry>): Promise<number> { // FIXME NOW
   for (let index = 0; index < log.length; index++) {
     const c = log[index].cid;
     if (c.equals(cid)) {
@@ -62,7 +62,7 @@ async function findIndex(retrieveCommit: RetrieveCommitFunc, cid: CID, log: Arra
  * @param log - Log array
  * @private
  */
-async function isCidIncluded(retrieveCommit: RetrieveCommitFunc, cid: CID, log: Array<LogEntry>): Promise<boolean> {
+export async function isCidIncluded(retrieveCommit: RetrieveCommitFunc, cid: CID, log: Array<LogEntry>): Promise<boolean> {
   return findIndex(retrieveCommit, cid, log).then(index => index !== -1)
 }
 
@@ -75,7 +75,7 @@ async function isCidIncluded(retrieveCommit: RetrieveCommitFunc, cid: CID, log: 
  * @param log - Found log so far
  * @private
  */
-async function fetchLog(retrieveCommit: RetrieveCommitFunc, cid: CID, state: DocState, log: Array<CID> = []): Promise<Array<CID>> {
+export async function fetchLog(retrieveCommit: RetrieveCommitFunc, cid: CID, state: DocState, log: Array<CID> = []): Promise<Array<CID>> {
   if (await isCidIncluded(retrieveCommit, cid, state.log)) { // already processed
     return [];
   }
@@ -298,19 +298,16 @@ export class Document extends EventEmitter implements DocStateHolder {
    */
   async _handleTip(cid: CID): Promise<void> {
     try {
-      this._isProcessing = true
+      this._isProcessing = true;
       await this._applyQueue.add(async () => {
-        const log = await fetchLog(this.retrieveCommit, cid, this.state$.value)
-        if (log.length) {
-          const next = await this.conflictResolution.applyLog(this.state, log)
-          if (next) {
-            this.state$.next(next)
-            this._doctype.emit('change') // FIXME NEXT
-          }
+        const next = await this.conflictResolution.applyTip(this.state$.value, cid);
+        if (next) {
+          this.state$.next(next);
+          this._doctype.emit('change'); // FIXME NEXT
         }
-      })
+      });
     } finally {
-      this._isProcessing = false
+      this._isProcessing = false;
     }
   }
 

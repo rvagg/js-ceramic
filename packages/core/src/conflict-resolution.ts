@@ -14,6 +14,9 @@ import {
 import { validateState } from './validate-state';
 import { Dispatcher } from './dispatcher';
 import cloneDeep from 'lodash.clonedeep';
+import { fetchLog } from './document';
+
+type RetrieveCommitFunc = (cid: CID | string, path?: string) => any;
 
 /**
  * Verifies anchor commit structure
@@ -64,39 +67,43 @@ async function verifyAnchorCommit(
  * @returns the DocState containing the log that is selected
  */
 export async function pickLogToAccept(state1: DocState, state2: DocState): Promise<DocState> {
-  const isState1Anchored = state1.anchorStatus === AnchorStatus.ANCHORED
-  const isState2Anchored = state2.anchorStatus === AnchorStatus.ANCHORED
+  const isState1Anchored = state1.anchorStatus === AnchorStatus.ANCHORED;
+  const isState2Anchored = state2.anchorStatus === AnchorStatus.ANCHORED;
 
   if (isState1Anchored != isState2Anchored) {
     // When one of the logs is anchored but not the other, take the one that is anchored
-    return isState1Anchored ? state1 : state2
+    return isState1Anchored ? state1 : state2;
   }
 
   if (isState1Anchored && isState2Anchored) {
     // compare anchor proofs if both states are anchored
-    const { anchorProof: proof1 } = state1
-    const { anchorProof: proof2 } = state2
+    const { anchorProof: proof1 } = state1;
+    const { anchorProof: proof2 } = state2;
 
     if (proof1.chainId != proof2.chainId) {
       // TODO: Add logic to handle conflicting updates anchored on different chains
-      throw new Error("Conflicting logs on the same document are anchored on different chains. Chain1: " +
-        proof1.chainId + ", chain2: " + proof2.chainId)
+      throw new Error(
+        'Conflicting logs on the same document are anchored on different chains. Chain1: ' +
+          proof1.chainId +
+          ', chain2: ' +
+          proof2.chainId,
+      );
     }
 
     // Compare block heights to decide which to take
     if (proof1.blockNumber < proof2.blockNumber) {
-      return state1
+      return state1;
     } else if (proof2.blockNumber < proof1.blockNumber) {
-      return state2
+      return state2;
     }
     // If they have the same block number fall through to fallback mechanism
   }
 
   // The anchor states are the same for both logs. Compare log lengths and choose the one with longer length.
   if (state1.log.length > state2.log.length) {
-    return state1
+    return state1;
   } else if (state1.log.length < state2.log.length) {
-    return state2
+    return state2;
   }
 
   // If we got this far, that means that we don't have sufficient information to make a good
@@ -104,7 +111,38 @@ export async function pickLogToAccept(state1: DocState, state2: DocState): Promi
   // is anchored, although it can also happen if both are anchored but in the same blockNumber or
   // blockTimestamp. At this point, the decision of which log to take is arbitrary, but we want it
   // to still be deterministic. Therefore, we take the log whose last entry has the lowest CID.
-  return state1.log[state1.log.length - 1].cid.bytes < state2.log[state2.log.length - 1].cid.bytes ? state1 : state2
+  return state1.log[state1.log.length - 1].cid.bytes < state2.log[state2.log.length - 1].cid.bytes ? state1 : state2;
+}
+
+export class HistoryLog {
+  constructor(private readonly dispatcher: Dispatcher, private readonly entries: LogEntry[]) {}
+
+  /**
+   * Find index of the commit in the array. If the commit is signed, fetch the payload
+   *
+   * @param cid - CID value
+   * @private
+   */
+  async findIndex(cid: CID): Promise<number> {
+    for (let index = 0; index < this.entries.length; index++) {
+      const current = this.entries[index].cid;
+      if (current.equals(cid)) {
+        return index;
+      }
+      const commit = await this.dispatcher.retrieveCommit(current);
+      if (DoctypeUtils.isSignedCommit(commit) && commit.link.equals(cid)) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Return CIDs of the log entries
+   */
+  get cids(): CID[] {
+    return this.entries.map((_) => _.cid);
+  }
 }
 
 export class ConflictResolution {
@@ -196,6 +234,13 @@ export class ConflictResolution {
     }
 
     return this.applyLogToState(log, cloneDeep(state));
+  }
+
+  async applyTip(initialState: DocState, tip: CID): Promise<DocState | null> {
+    const log = await fetchLog(this.dispatcher.retrieveCommit.bind(this.dispatcher), tip, initialState);
+    if (log.length) {
+      return this.applyLog(initialState, log);
+    }
   }
 
   /**
