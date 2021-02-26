@@ -72,13 +72,12 @@ async function validateDocument(document: Document, context: Context) {
  */
 export class Document extends EventEmitter implements DocStateHolder {
   readonly id: DocID
-
   private readonly state$: BehaviorSubject<DocState>
-  private _applyQueue: PQueue
+  private readonly subscriptionSet = new SubscriptionSet();
 
+  private _applyQueue: PQueue
   private _logger: DiagnosticsLogger
   private _isProcessing: boolean
-  private readonly subscriptionSet = new SubscriptionSet();
   _doctype: Doctype
 
   constructor (initialState: DocState,
