@@ -57,6 +57,7 @@ class Document extends EventEmitter implements DocStateHolder {
     this._doctype = readonly ? DoctypeUtils.makeReadOnly(doctype) : doctype
     this.id = new DocID(_doctypeHandler.name, initialState.log[0].cid)
     this.state$ = new BehaviorSubject(initialState)
+    // FIXME NEXT distinct only
     this.state$.subscribe(state => {
       this._doctype.state = state
     })
@@ -297,9 +298,8 @@ class Document extends EventEmitter implements DocStateHolder {
         if (log.length) {
           const next = await this._applyLog(log)
           if (next) {
-            // this._doctype.state = next // FIXME NEXT
             this.state$.next(next)
-            this._doctype.emit('change')
+            this._doctype.emit('change') // FIXME NEXT
           }
         }
       })
@@ -567,39 +567,35 @@ class Document extends EventEmitter implements DocStateHolder {
    * Request anchor for the latest document state
    */
   anchor(): void {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const doc = this
-    const requestTip: CID = this.tip
-
     const anchorStatus$ = this._context.anchorService.requestAnchor(this.id.baseID, this.tip);
     const subscription = anchorStatus$
         .pipe(
             concatMap(async (asr) => {
               switch (asr.status) {
                 case AnchorStatus.PENDING: {
-                  const next = { ...doc.state, anchorStatus: AnchorStatus.PENDING }
+                  const next = { ...this.state, anchorStatus: AnchorStatus.PENDING }
                   if (asr.anchorScheduledFor) next.anchorScheduledFor = asr.anchorScheduledFor
-                  doc._doctype.state = next // FIXME NEXT
-                  await doc._updateStateIfPinned();
+                  this.state$.next(next)
+                  await this._updateStateIfPinned();
                   return;
                 }
                 case AnchorStatus.PROCESSING: {
-                  doc._doctype.state = { ...doc.state, anchorStatus: AnchorStatus.PROCESSING }; // FIXME NEXT
-                  await doc._updateStateIfPinned();
+                  this.state$.next({ ...this.state, anchorStatus: AnchorStatus.PROCESSING })
+                  await this._updateStateIfPinned();
                   return;
                 }
                 case AnchorStatus.ANCHORED: {
-                  await doc._handleTip(asr.anchorRecord);
-                  await doc._updateStateIfPinned();
-                  doc._publishTip();
+                  await this._handleTip(asr.anchorRecord);
+                  await this._updateStateIfPinned();
+                  this._publishTip();
                   subscription.unsubscribe();
                   return;
                 }
                 case AnchorStatus.FAILED: {
-                  if (requestTip !== doc.tip) {
-                    return;
+                  if (!asr.cid.equals(this.tip)) {
+                    return; // TODO Check if this comparison is still required
                   }
-                  doc._doctype.state = { ...doc._doctype.state, anchorStatus: AnchorStatus.FAILED }; // FIXME NEXT
+                  this.state$.next({ ...this.state, anchorStatus: AnchorStatus.FAILED })
                   subscription.unsubscribe();
                   return;
                 }
