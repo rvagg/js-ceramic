@@ -5,8 +5,6 @@ import PQueue from 'p-queue'
 import cloneDeep from 'lodash.clonedeep'
 import Utils from './utils'
 import {
-  AnchorProof,
-  AnchorCommit,
   AnchorStatus,
   DocState,
   LogEntry,
@@ -17,7 +15,7 @@ import {
   DoctypeUtils,
   DocMetadata,
   DocStateHolder,
-  UnreachableCaseError, CommitType, AnchorService,
+  UnreachableCaseError, CommitType,
 } from '@ceramicnetwork/common';
 import DocID, { CommitID } from '@ceramicnetwork/docid';
 import { PinStore } from './store/pin-store';
@@ -26,6 +24,7 @@ import { concatMap } from "rxjs/operators";
 import { DiagnosticsLogger } from "@ceramicnetwork/logger";
 import { BehaviorSubject } from 'rxjs'
 import { validateState } from './validate-state';
+import { ConflictResolution } from './conflict-resolution';
 
 // DocOpts defaults for document load operations
 const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
@@ -157,42 +156,6 @@ export async function pickLogToAccept(state1: DocState, state2: DocState): Promi
 }
 
 /**
- * Verifies anchor commit structure
- *
- * @param retrieveFromIPFS - Get raw blob from IPFS
- * @param anchorService - AnchorService to verify chain inclusion
- * @param commit - Anchor commit
- * @private
- */
-async function verifyAnchorCommit(retrieveFromIPFS: RetrieveCommitFunc, anchorService: AnchorService, commit: AnchorCommit): Promise<AnchorProof> {
-  const proofCID = commit.proof
-  const proof =  await retrieveFromIPFS(proofCID)
-
-  let prevCIDViaMerkleTree
-  try {
-    // optimize verification by using ipfs.dag.tree for fetching the nested CID
-    if (commit.path.length === 0) {
-      prevCIDViaMerkleTree = proof.root
-    } else {
-      const merkleTreeParentRecordPath = '/root/' + commit.path.substr(0, commit.path.lastIndexOf('/'))
-      const last: string = commit.path.substr(commit.path.lastIndexOf('/') + 1)
-
-      const merkleTreeParentRecord = await retrieveFromIPFS(proofCID, merkleTreeParentRecordPath)
-      prevCIDViaMerkleTree = merkleTreeParentRecord[last]
-    }
-  } catch (e) {
-    throw new Error(`The anchor commit couldn't be verified. Reason ${e.message}`)
-  }
-
-  if (commit.prev.toString() !== prevCIDViaMerkleTree.toString()) {
-    throw new Error(`The anchor commit proof ${commit.proof.toString()} with path ${commit.path} points to invalid 'prev' commit`)
-  }
-
-  await anchorService.validateChainInclusion(proof)
-  return proof
-}
-
-/**
  * Document handles the update logic of the Doctype instance
  */
 export class Document extends EventEmitter implements DocStateHolder {
@@ -206,6 +169,7 @@ export class Document extends EventEmitter implements DocStateHolder {
   _doctype: Doctype
 
   private readonly retrieveCommit: RetrieveCommitFunc
+  private readonly conflictResolution: ConflictResolution;
 
   constructor (initialState: DocState,
                readonly dispatcher: Dispatcher,
@@ -228,6 +192,7 @@ export class Document extends EventEmitter implements DocStateHolder {
 
     this._applyQueue = new PQueue({ concurrency: 1 })
     this.retrieveCommit = this.dispatcher.retrieveCommit.bind(this.dispatcher)
+    this.conflictResolution = new ConflictResolution(_context, dispatcher, handler, _validate)
   }
 
   /**
@@ -338,9 +303,8 @@ export class Document extends EventEmitter implements DocStateHolder {
 
     // If the requested commit is included in the log, but isn't the most recent commit, we need
     // to reset the state to the state at the requested commit.
-    const resetLog = doc.state.log.slice(0, commitIndex + 1)
-    const resetState = await doc._applyLogToState(resetLog.map((logEntry) => logEntry.cid))
-    return new Document(resetState, doc.dispatcher, doc.pinStore, doc._validate, doc._context, doc.handler, true)
+    const resetLog = doc.state.log.slice(0, commitIndex + 1).map(_ => _.cid)
+    return doc.rewind(resetLog)
   }
 
   /**
@@ -453,7 +417,7 @@ export class Document extends EventEmitter implements DocStateHolder {
     }
     if (payload.prev.equals(this.tip)) {
       // the new log starts where the previous one ended
-      return this._applyLogToState(log, cloneDeep(this.state))
+      return this.conflictResolution.applyLogToState(log, cloneDeep(this.state))
     }
 
     // we have a conflict since prev is in the log of the local state, but isn't the tip
@@ -462,62 +426,25 @@ export class Document extends EventEmitter implements DocStateHolder {
     const canonicalLog = this.state.log.map(({cid}) => cid) // copy log
     const localLog = canonicalLog.splice(conflictIdx)
     // Compute state up till conflictIdx
-    const state: DocState = await this._applyLogToState(canonicalLog)
+    const state: DocState = await this.conflictResolution.applyLogToState(canonicalLog)
     // Compute next transition in parallel
-    const localState = await this._applyLogToState(localLog, cloneDeep(state), true)
-    const remoteState = await this._applyLogToState(log, cloneDeep(state), true)
+    const localState = await this.conflictResolution.applyLogToState(localLog, cloneDeep(state), true)
+    const remoteState = await this.conflictResolution.applyLogToState(log, cloneDeep(state), true)
 
     const selectedState = await pickLogToAccept(localState, remoteState)
     if (selectedState === localState) {
       return null
     }
 
-    return this._applyLogToState(log, cloneDeep(state))
+    return this.conflictResolution.applyLogToState(log, cloneDeep(state))
   }
 
   /**
-   * Applies the log to the document and updates the state.
-   * TODO: make this static so it's immediately obvious that this doesn't mutate the document
-   *
-   * @param log - Log of commit CIDs
-   * @param state - Document state
-   * @param breakOnAnchor - Should break apply on anchor commits?
-   * @private
+   * Return readonly snapshot of the document based on the passed log.
    */
-  async _applyLogToState (log: Array<CID>, state?: DocState, breakOnAnchor?: boolean): Promise<DocState> {
-    const itr = log.entries()
-    let entry = itr.next()
-    while(!entry.done) {
-      const cid = entry.value[1]
-      const commit = await this.retrieveCommit(cid)
-      // TODO - should catch potential thrown error here
-
-      let payload = commit
-      if (DoctypeUtils.isSignedCommit(commit)) {
-        payload = await this.retrieveCommit(commit.link)
-      }
-
-      if (payload.proof) {
-        // it's an anchor commit
-        await verifyAnchorCommit(this.dispatcher.retrieveFromIPFS.bind(this.dispatcher), this._context.anchorService, commit)
-        state = await this.handler.applyCommit(commit, cid, this._context, state)
-      } else {
-        // it's a signed commit
-        const tmpState = await this.handler.applyCommit(commit, cid, this._context, state)
-        const isGenesis = !payload.prev
-        const effectiveState = isGenesis ? tmpState : tmpState.next
-        if (this._validate) {
-          await validateState(effectiveState, effectiveState.content, this._context.api)
-        }
-        state = tmpState // if validation is successful
-      }
-
-      if (breakOnAnchor && AnchorStatus.ANCHORED === state.anchorStatus) {
-        return state
-      }
-      entry = itr.next()
-    }
-    return state
+  async rewind(log: CID[]) {
+    const resetState = await this.conflictResolution.applyLogToState(log)
+    return new Document(resetState, this.dispatcher, this.pinStore, this._validate, this._context, this.handler, true)
   }
 
   /**
