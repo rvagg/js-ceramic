@@ -106,7 +106,7 @@ export class Document extends EventEmitter implements DocStateHolder {
   /**
    * Creates new Doctype with params
    * @param docId - Document ID
-   * @param doctypeHandler - DoctypeHandler instance
+   * @param handler - DoctypeHandler instance
    * @param dispatcher - Dispatcher instance
    * @param pinStore - PinStore instance
    * @param context - Ceramic context
@@ -115,7 +115,7 @@ export class Document extends EventEmitter implements DocStateHolder {
    */
   static async create (
       docId: DocID,
-      doctypeHandler: DoctypeHandler<Doctype>,
+      handler: DoctypeHandler<Doctype>,
       dispatcher: Dispatcher,
       pinStore: PinStore,
       context: Context,
@@ -124,23 +124,12 @@ export class Document extends EventEmitter implements DocStateHolder {
   ): Promise<Document> {
     // Fill 'opts' with default values for any missing fields
     opts = {...DEFAULT_WRITE_DOCOPTS, ...opts}
-
-    const genesis = await dispatcher.retrieveCommit(docId.cid)
-    const state = await doctypeHandler.applyCommit(genesis, docId.cid, context)
-
-    const document = new Document(state, dispatcher, pinStore, validate, context, doctypeHandler)
-
-    if (validate) {
-      await validateDocument(document, context)
-    }
-
-    await document._syncDocumentToCurrent(pinStore, opts)
-    return document
+    return this.load(docId, handler, dispatcher, pinStore, context, opts, validate)
   }
 
   /**
    * Loads the Doctype by id
-   * @param id - Document ID
+   * @param docId - Document ID
    * @param handler - find handler
    * @param dispatcher - Dispatcher instance
    * @param pinStore - PinStore instance
@@ -149,7 +138,7 @@ export class Document extends EventEmitter implements DocStateHolder {
    * @param validate - Validate content against schema
    */
   static async load<T extends Doctype> (
-      id: DocID,
+      docId: DocID,
       handler: DoctypeHandler<T>,
       dispatcher: Dispatcher,
       pinStore: PinStore,
@@ -159,7 +148,18 @@ export class Document extends EventEmitter implements DocStateHolder {
     // Fill 'opts' with default values for any missing fields
     opts = {...DEFAULT_LOAD_DOCOPTS, ...opts}
 
-    const document = await Document._loadGenesis(id, handler, dispatcher, pinStore, context, validate)
+    const genesisCid = docId.cid
+    const commit = await dispatcher.retrieveCommit(genesisCid)
+    if (commit == null) {
+      throw new Error(`No genesis commit found with CID ${genesisCid.toString()}`)
+    }
+    const state = await handler.applyCommit(commit, docId.cid, context)
+    const document = new Document(state, dispatcher, pinStore, validate, context, handler)
+
+    if (validate) {
+      await validateDocument(document, context)
+    }
+
     await document._syncDocumentToCurrent(pinStore, opts)
     return document
   }
@@ -213,39 +213,6 @@ export class Document extends EventEmitter implements DocStateHolder {
     const resetLog = doc.state.log.slice(0, commitIndex + 1)
     const resetState = await doc._applyLogToState(resetLog.map((logEntry) => logEntry.cid))
     return new Document(resetState, doc.dispatcher, doc.pinStore, doc._validate, doc._context, doc._doctypeHandler, true)
-  }
-
-  /**
-   * Loads the genesis commit and builds a Document object off it, but does not register for updates
-   * or apply any additional commits past the genesis commit.
-   * @param id - Document id
-   * @param handler
-   * @param dispatcher
-   * @param pinStore
-   * @param context
-   * @param validate
-   * @private
-   */
-  private static async _loadGenesis<T extends Doctype>(
-      id: DocID,
-      handler: DoctypeHandler<T>,
-      dispatcher: Dispatcher,
-      pinStore: PinStore,
-      context: Context,
-      validate: boolean) {
-    const genesisCid = id.cid
-    const commit = await dispatcher.retrieveCommit(genesisCid)
-    if (commit == null) {
-      throw new Error(`No genesis commit found with CID ${genesisCid.toString()}`)
-    }
-    const state = await handler.applyCommit(commit, id.cid, context)
-    const document = new Document(state, dispatcher, pinStore, validate, context, handler)
-
-    if (validate) {
-      await validateDocument(document, context)
-    }
-
-    return document
   }
 
   /**
