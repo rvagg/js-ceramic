@@ -159,9 +159,9 @@ export class Document extends EventEmitter implements DocStateHolder {
     // Fill 'opts' with default values for any missing fields
     opts = {...DEFAULT_LOAD_DOCOPTS, ...opts}
 
-    const doc = await Document._loadGenesis(id, handler, dispatcher, pinStore, context, validate)
-    await doc._syncDocumentToCurrent(pinStore, opts)
-    return doc
+    const document = await Document._loadGenesis(id, handler, dispatcher, pinStore, context, validate)
+    await document._syncDocumentToCurrent(pinStore, opts)
+    return document
   }
 
   /**
