@@ -32,6 +32,42 @@ const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
 const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
 
 /**
+ * Loads schema by ID
+ *
+ * @param context - Ceramic context
+ * @param schemaDocId - Schema document ID
+ */
+async function loadSchemaById<T extends any>(context: Context, schemaDocId: string): Promise<T | null> {
+  let commitId: CommitID;
+  try {
+    commitId = CommitID.fromString(schemaDocId);
+  } catch {
+    throw new Error('Commit missing when loading schema document');
+  }
+  const schemaDoc = await context.api.loadDocument(commitId);
+  return schemaDoc.content;
+}
+
+/**
+ * Loads schema for the Doctype
+ */
+async function loadSchema<T extends any>(context: Context, state: DocState): Promise<T | null> {
+  const schemaId = state.metadata?.schema
+  if (schemaId) {
+    return loadSchemaById(context, schemaId)
+  } else {
+    return null
+  }
+}
+
+async function validateDocument(document: Document, context: Context) {
+  const schema = await loadSchema(context, document.state)
+  if (schema) {
+    Utils.validate(document.content, schema)
+  }
+}
+
+/**
  * Document handles the update logic of the Doctype instance
  */
 export class Document extends EventEmitter implements DocStateHolder {
@@ -92,17 +128,14 @@ export class Document extends EventEmitter implements DocStateHolder {
     const genesis = await dispatcher.retrieveCommit(docId.cid)
     const state = await doctypeHandler.applyCommit(genesis, docId.cid, context)
 
-    const doc = new Document(state, dispatcher, pinStore, validate, context, doctypeHandler)
+    const document = new Document(state, dispatcher, pinStore, validate, context, doctypeHandler)
 
     if (validate) {
-      const schema = await Document.loadSchema(context, doc._doctype)
-      if (schema) {
-        Utils.validate(doc._doctype.content, schema)
-      }
+      await validateDocument(document, context)
     }
 
-    await doc._syncDocumentToCurrent(pinStore, opts)
-    return doc
+    await document._syncDocumentToCurrent(pinStore, opts)
+    return document
   }
 
   /**
@@ -206,16 +239,13 @@ export class Document extends EventEmitter implements DocStateHolder {
       throw new Error(`No genesis commit found with CID ${genesisCid.toString()}`)
     }
     const state = await handler.applyCommit(commit, id.cid, context)
-    const doc = new Document(state, dispatcher, pinStore, validate, context, handler)
+    const document = new Document(state, dispatcher, pinStore, validate, context, handler)
 
     if (validate) {
-      const schema = await Document.loadSchema(context, doc._doctype)
-      if (schema) {
-        Utils.validate(doc._doctype.content, schema)
-      }
+      await validateDocument(document, context)
     }
 
-    return doc
+    return document
   }
 
   /**
@@ -503,7 +533,7 @@ export class Document extends EventEmitter implements DocStateHolder {
         if (this._validate) {
           const schemaId = effectiveState.metadata.schema
           if (schemaId) {
-            const schema = await Document.loadSchemaById(this._context, schemaId)
+            const schema = await loadSchemaById(this._context, schemaId)
             if (schema) {
               Utils.validate(effectiveState.content, schema)
             }
@@ -606,36 +636,6 @@ export class Document extends EventEmitter implements DocStateHolder {
         )
         .subscribe();
     this.subscriptionSet.add(subscription);
-  }
-
-  /**
-   * Loads schema for the Doctype
-   *
-   * @param context - Ceramic context
-   * @param doctype - Doctype instance
-   */
-  static async loadSchema<T extends Doctype>(context: Context, doctype: Doctype): Promise<T> {
-    return doctype.state?.metadata?.schema ? Document.loadSchemaById(context, doctype.state.metadata.schema) : null
-  }
-
-  /**
-   * Loads schema by ID
-   *
-   * @param context - Ceramic context
-   * @param schemaDocId - Schema document ID
-   */
-  static async loadSchemaById<T extends Doctype>(context: Context, schemaDocId: string): Promise<T> {
-    if (schemaDocId) {
-      let commitId: CommitID
-      try {
-        commitId = CommitID.fromString(schemaDocId)
-      } catch {
-        throw new Error("Commit missing when loading schema document")
-      }
-      const schemaDoc = await context.api.loadDocument(commitId)
-      return schemaDoc.content
-    }
-    return null
   }
 
   /**
