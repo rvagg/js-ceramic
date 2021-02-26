@@ -34,7 +34,7 @@ const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
 /**
  * Document handles the update logic of the Doctype instance
  */
-class Document extends EventEmitter implements DocStateHolder {
+export class Document extends EventEmitter implements DocStateHolder {
   readonly id: DocID
 
   private readonly state$: BehaviorSubject<DocState>
@@ -737,5 +737,3 @@ class Document extends EventEmitter implements DocStateHolder {
     return JSON.stringify(this.state.content)
   }
 }
-
-export default Document
