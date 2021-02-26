@@ -31,6 +31,8 @@ const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
 // DocOpts defaults for document write operations
 const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
 
+type RetrieveCommitFunc = (cid: CID | string) => any
+
 /**
  * Loads schema by ID
  *
@@ -73,18 +75,18 @@ async function validateDocument(document: Document, context: Context) {
 /**
  * Find index of the commit in the array. If the commit is signed, fetch the payload
  *
- * @param dispatcher - Dispatcher to retrieve commits from.
+ * @param retrieveCommit - Get commit from IPFS
  * @param cid - CID value
  * @param log - Log array
  * @private
  */
-async function findIndex(dispatcher: Dispatcher, cid: CID, log: Array<LogEntry>): Promise<number> {
+async function findIndex(retrieveCommit: RetrieveCommitFunc, cid: CID, log: Array<LogEntry>): Promise<number> {
   for (let index = 0; index < log.length; index++) {
     const c = log[index].cid;
     if (c.equals(cid)) {
       return index;
     }
-    const commit = await dispatcher.retrieveCommit(c);
+    const commit = await retrieveCommit(c);
     if (DoctypeUtils.isSignedCommit(commit) && commit.link.equals(cid)) {
       return index;
     }
@@ -95,13 +97,50 @@ async function findIndex(dispatcher: Dispatcher, cid: CID, log: Array<LogEntry>)
 /**
  * Is CID included in the log. If the commit is signed, fetch the payload
  *
- * @param dispatcher - Dispatcher to retrieve commits from.
+ * @param retrieveCommit - Get commit from IPFS
  * @param cid - CID value
  * @param log - Log array
  * @private
  */
-async function isCidIncluded(dispatcher: Dispatcher, cid: CID, log: Array<LogEntry>): Promise<boolean> {
-  return findIndex(dispatcher, cid, log).then(index => index !== -1)
+async function isCidIncluded(retrieveCommit: RetrieveCommitFunc, cid: CID, log: Array<LogEntry>): Promise<boolean> {
+  return findIndex(retrieveCommit, cid, log).then(index => index !== -1)
+}
+
+/**
+ * Fetch log to find a connection for the given CID
+ *
+ * @param retrieveCommit - Get commit from IPFS
+ * @param cid - Commit CID
+ * @param state - Current Document State
+ * @param log - Found log so far
+ * @private
+ */
+async function fetchLog(retrieveCommit: RetrieveCommitFunc, cid: CID, state: DocState, log: Array<CID> = []): Promise<Array<CID>> {
+  if (await isCidIncluded(retrieveCommit, cid, state.log)) { // already processed
+    return [];
+  }
+  const commit = await retrieveCommit(cid);
+  if (commit == null) {
+    throw new Error(`No commit found for CID ${cid.toString()}`);
+  }
+
+  let payload = commit;
+  if (DoctypeUtils.isSignedCommit(commit)) {
+    payload = await retrieveCommit(commit.link);
+    if (payload == null) {
+      throw new Error(`No commit found for CID ${commit.link.toString()}`);
+    }
+  }
+  const prevCid: CID = payload.prev;
+  if (!prevCid) { // this is a fake log
+    return [];
+  }
+  log.unshift(cid);
+  if (await isCidIncluded(retrieveCommit, prevCid, state.log)) {
+    // we found the connection to the canonical log
+    return log;
+  }
+  return fetchLog(retrieveCommit, prevCid, state, log);
 }
 
 /**
@@ -116,6 +155,8 @@ export class Document extends EventEmitter implements DocStateHolder {
   private _logger: DiagnosticsLogger
   private _isProcessing: boolean
   _doctype: Doctype
+
+  private readonly retrieveCommit: RetrieveCommitFunc
 
   constructor (initialState: DocState,
                readonly dispatcher: Dispatcher,
@@ -137,6 +178,7 @@ export class Document extends EventEmitter implements DocStateHolder {
     this._logger = _context.loggerProvider.getDiagnosticsLogger()
 
     this._applyQueue = new PQueue({ concurrency: 1 })
+    this.retrieveCommit = this.dispatcher.retrieveCommit.bind(this.dispatcher)
   }
 
   /**
@@ -240,7 +282,7 @@ export class Document extends EventEmitter implements DocStateHolder {
     // If 'commit' is not included in doc's log at this point, that means that conflict resolution
     // rejected it.
     // const commitIndex = await doc._findIndex(id.commit, doc.state.log)
-    const commitIndex = await findIndex(doc.dispatcher, id.commit, doc.state.log)
+    const commitIndex = await findIndex(doc.retrieveCommit, id.commit, doc.state.log) // FIXME NEXT Rewind
     if (commitIndex < 0) {
       throw new Error(`Requested commit CID ${id.commit.toString()} not found in the log for document ${id.baseID.toString()}`)
     }
@@ -328,7 +370,7 @@ export class Document extends EventEmitter implements DocStateHolder {
     try {
       this._isProcessing = true
       await this._applyQueue.add(async () => {
-        const log = await this._fetchLog(cid)
+        const log = await fetchLog(this.retrieveCommit, cid, this.state$.value)
         if (log.length) {
           const next = await this._applyLog(log)
           if (next) {
@@ -340,41 +382,6 @@ export class Document extends EventEmitter implements DocStateHolder {
     } finally {
       this._isProcessing = false
     }
-  }
-
-  /**
-   * Fetch log to find a connection for the given CID
-   *
-   * @param cid - Commit CID
-   * @param log - Found log so far
-   * @private
-   */
-  async _fetchLog (cid: CID, log: Array<CID> = []): Promise<Array<CID>> {
-    if (await isCidIncluded(this.dispatcher, cid, this.state.log)) { // already processed
-      return []
-    }
-    const commit = await this.dispatcher.retrieveCommit(cid)
-    if (commit == null) {
-      throw new Error(`No commit found for CID ${cid.toString()}`)
-    }
-
-    let payload = commit
-    if (DoctypeUtils.isSignedCommit(commit)) {
-      payload = await this.dispatcher.retrieveCommit(commit.link)
-      if (payload == null) {
-        throw new Error(`No commit found for CID ${commit.link.toString()}`)
-      }
-    }
-    const prevCid: CID = payload.prev
-    if (!prevCid) { // this is a fake log
-      return []
-    }
-    log.unshift(cid)
-    if (await isCidIncluded(this.dispatcher, prevCid, this.state.log)) {
-      // we found the connection to the canonical log
-      return log
-    }
-    return this._fetchLog(prevCid, log)
   }
 
   /**
@@ -442,10 +449,10 @@ export class Document extends EventEmitter implements DocStateHolder {
       return null
     }
     const cid = log[0]
-    const commit = await this.dispatcher.retrieveCommit(cid)
+    const commit = await this.retrieveCommit(cid)
     let payload = commit
     if (DoctypeUtils.isSignedCommit(commit)) {
-      payload = await this.dispatcher.retrieveCommit(commit.link)
+      payload = await this.retrieveCommit(commit.link)
     }
     if (payload.prev.equals(this.tip)) {
       // the new log starts where the previous one ended
@@ -454,7 +461,7 @@ export class Document extends EventEmitter implements DocStateHolder {
 
     // we have a conflict since prev is in the log of the local state, but isn't the tip
     // BEGIN CONFLICT RESOLUTION
-    const conflictIdx = await findIndex(this.dispatcher, payload.prev, this.state.log) + 1
+    const conflictIdx = await findIndex(this.retrieveCommit, payload.prev, this.state.log) + 1
     const canonicalLog = this.state.log.map(({cid}) => cid) // copy log
     const localLog = canonicalLog.splice(conflictIdx)
     // Compute state up till conflictIdx
@@ -485,12 +492,12 @@ export class Document extends EventEmitter implements DocStateHolder {
     let entry = itr.next()
     while(!entry.done) {
       const cid = entry.value[1]
-      const commit = await this.dispatcher.retrieveCommit(cid)
+      const commit = await this.retrieveCommit(cid)
       // TODO - should catch potential thrown error here
 
       let payload = commit
       if (DoctypeUtils.isSignedCommit(commit)) {
-        payload = await this.dispatcher.retrieveCommit(commit.link)
+        payload = await this.retrieveCommit(commit.link)
       }
 
       if (payload.proof) {
