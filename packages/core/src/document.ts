@@ -60,11 +60,48 @@ async function loadSchema<T extends any>(context: Context, state: DocState): Pro
   }
 }
 
+/**
+ * Validate Document against its schema.
+ */
 async function validateDocument(document: Document, context: Context) {
   const schema = await loadSchema(context, document.state)
   if (schema) {
     Utils.validate(document.content, schema)
   }
+}
+
+/**
+ * Find index of the commit in the array. If the commit is signed, fetch the payload
+ *
+ * @param dispatcher - Dispatcher to retrieve commits from.
+ * @param cid - CID value
+ * @param log - Log array
+ * @private
+ */
+async function findIndex(dispatcher: Dispatcher, cid: CID, log: Array<LogEntry>): Promise<number> {
+  for (let index = 0; index < log.length; index++) {
+    const c = log[index].cid;
+    if (c.equals(cid)) {
+      return index;
+    }
+    const commit = await dispatcher.retrieveCommit(c);
+    if (DoctypeUtils.isSignedCommit(commit) && commit.link.equals(cid)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Is CID included in the log. If the commit is signed, fetch the payload
+ *
+ * @param dispatcher - Dispatcher to retrieve commits from.
+ * @param cid - CID value
+ * @param log - Log array
+ * @private
+ */
+async function isCidIncluded(dispatcher: Dispatcher, cid: CID, log: Array<LogEntry>): Promise<boolean> {
+  return findIndex(dispatcher, cid, log).then(index => index !== -1)
 }
 
 /**
@@ -202,7 +239,8 @@ export class Document extends EventEmitter implements DocStateHolder {
 
     // If 'commit' is not included in doc's log at this point, that means that conflict resolution
     // rejected it.
-    const commitIndex = await doc._findIndex(id.commit, doc.state.log)
+    // const commitIndex = await doc._findIndex(id.commit, doc.state.log)
+    const commitIndex = await findIndex(doc.dispatcher, id.commit, doc.state.log)
     if (commitIndex < 0) {
       throw new Error(`Requested commit CID ${id.commit.toString()} not found in the log for document ${id.baseID.toString()}`)
     }
@@ -312,7 +350,7 @@ export class Document extends EventEmitter implements DocStateHolder {
    * @private
    */
   async _fetchLog (cid: CID, log: Array<CID> = []): Promise<Array<CID>> {
-    if (await this._isCidIncluded(cid, this.state.log)) { // already processed
+    if (await isCidIncluded(this.dispatcher, cid, this.state.log)) { // already processed
       return []
     }
     const commit = await this.dispatcher.retrieveCommit(cid)
@@ -332,43 +370,11 @@ export class Document extends EventEmitter implements DocStateHolder {
       return []
     }
     log.unshift(cid)
-    if (await this._isCidIncluded(prevCid, this.state.log)) {
+    if (await isCidIncluded(this.dispatcher, prevCid, this.state.log)) {
       // we found the connection to the canonical log
       return log
     }
     return this._fetchLog(prevCid, log)
-  }
-
-  /**
-   * Find index of the commit in the array. If the commit is signed, fetch the payload
-   *
-   * @param cid - CID value
-   * @param log - Log array
-   * @private
-   */
-  async _findIndex(cid: CID, log: Array<LogEntry>): Promise<number> {
-    for (let index = 0; index < log.length; index++) {
-      const c = log[index].cid
-      if (c.equals(cid)) {
-        return index
-      }
-      const commit = await this.dispatcher.retrieveCommit(c)
-      if (DoctypeUtils.isSignedCommit(commit) && commit.link.equals(cid)) {
-        return index
-      }
-    }
-    return -1
-  }
-
-  /**
-   * Is CID included in the log. If the commit is signed, fetch the payload
-   *
-   * @param cid - CID value
-   * @param log - Log array
-   * @private
-   */
-  async _isCidIncluded(cid: CID, log: Array<LogEntry>): Promise<boolean> {
-    return (await this._findIndex(cid, log)) !== -1
   }
 
   /**
@@ -448,7 +454,7 @@ export class Document extends EventEmitter implements DocStateHolder {
 
     // we have a conflict since prev is in the log of the local state, but isn't the tip
     // BEGIN CONFLICT RESOLUTION
-    const conflictIdx = await this._findIndex(payload.prev, this.state.log) + 1
+    const conflictIdx = await findIndex(this.dispatcher, payload.prev, this.state.log) + 1
     const canonicalLog = this.state.log.map(({cid}) => cid) // copy log
     const localLog = canonicalLog.splice(conflictIdx)
     // Compute state up till conflictIdx
