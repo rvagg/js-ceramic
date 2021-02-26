@@ -17,7 +17,7 @@ import {
   DoctypeUtils,
   DocMetadata,
   DocStateHolder,
-  UnreachableCaseError, CommitType,
+  UnreachableCaseError, CommitType, AnchorService,
 } from '@ceramicnetwork/common';
 import DocID, { CommitID } from '@ceramicnetwork/docid';
 import { PinStore } from './store/pin-store';
@@ -31,7 +31,7 @@ const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
 // DocOpts defaults for document write operations
 const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
 
-type RetrieveCommitFunc = (cid: CID | string) => any
+type RetrieveCommitFunc = (cid: CID | string, path?: string) => any
 
 /**
  * Loads schema by ID
@@ -192,6 +192,42 @@ export async function pickLogToAccept(state1: DocState, state2: DocState): Promi
   // blockTimestamp. At this point, the decision of which log to take is arbitrary, but we want it
   // to still be deterministic. Therefore, we take the log whose last entry has the lowest CID.
   return state1.log[state1.log.length - 1].cid.bytes < state2.log[state2.log.length - 1].cid.bytes ? state1 : state2
+}
+
+/**
+ * Verifies anchor commit structure
+ *
+ * @param retrieveFromIPFS - Get raw blob from IPFS
+ * @param anchorService - AnchorService to verify chain inclusion
+ * @param commit - Anchor commit
+ * @private
+ */
+async function verifyAnchorCommit(retrieveFromIPFS: RetrieveCommitFunc, anchorService: AnchorService, commit: AnchorCommit): Promise<AnchorProof> {
+  const proofCID = commit.proof
+  const proof =  await retrieveFromIPFS(proofCID)
+
+  let prevCIDViaMerkleTree
+  try {
+    // optimize verification by using ipfs.dag.tree for fetching the nested CID
+    if (commit.path.length === 0) {
+      prevCIDViaMerkleTree = proof.root
+    } else {
+      const merkleTreeParentRecordPath = '/root/' + commit.path.substr(0, commit.path.lastIndexOf('/'))
+      const last: string = commit.path.substr(commit.path.lastIndexOf('/') + 1)
+
+      const merkleTreeParentRecord = await retrieveFromIPFS(proofCID, merkleTreeParentRecordPath)
+      prevCIDViaMerkleTree = merkleTreeParentRecord[last]
+    }
+  } catch (e) {
+    throw new Error(`The anchor commit couldn't be verified. Reason ${e.message}`)
+  }
+
+  if (commit.prev.toString() !== prevCIDViaMerkleTree.toString()) {
+    throw new Error(`The anchor commit proof ${commit.proof.toString()} with path ${commit.path} points to invalid 'prev' commit`)
+  }
+
+  await anchorService.validateChainInclusion(proof)
+  return proof
 }
 
 /**
@@ -501,7 +537,7 @@ export class Document extends EventEmitter implements DocStateHolder {
 
       if (payload.proof) {
         // it's an anchor commit
-        await this._verifyAnchorCommit(commit)
+        await verifyAnchorCommit(this.dispatcher.retrieveFromIPFS.bind(this.dispatcher), this._context.anchorService, commit)
         state = await this.handler.applyCommit(commit, cid, this._context, state)
       } else {
         // it's a signed commit
@@ -526,40 +562,6 @@ export class Document extends EventEmitter implements DocStateHolder {
       entry = itr.next()
     }
     return state
-  }
-
-  /**
-   * Verifies anchor commit structure
-   *
-   * @param commit - Anchor commit
-   * @private
-   */
-  async _verifyAnchorCommit (commit: AnchorCommit): Promise<AnchorProof> {
-    const proofCID = commit.proof
-    const proof =  await this.dispatcher.retrieveFromIPFS(proofCID)
-
-    let prevCIDViaMerkleTree
-    try {
-      // optimize verification by using ipfs.dag.tree for fetching the nested CID
-      if (commit.path.length === 0) {
-        prevCIDViaMerkleTree = proof.root
-      } else {
-        const merkleTreeParentRecordPath = '/root/' + commit.path.substr(0, commit.path.lastIndexOf('/'))
-        const last: string = commit.path.substr(commit.path.lastIndexOf('/') + 1)
-
-        const merkleTreeParentRecord = await this.dispatcher.retrieveFromIPFS(proofCID, merkleTreeParentRecordPath)
-        prevCIDViaMerkleTree = merkleTreeParentRecord[last]
-      }
-    } catch (e) {
-      throw new Error(`The anchor commit couldn't be verified. Reason ${e.message}`)
-    }
-
-    if (commit.prev.toString() !== prevCIDViaMerkleTree.toString()) {
-      throw new Error(`The anchor commit proof ${commit.proof.toString()} with path ${commit.path} points to invalid 'prev' commit`)
-    }
-
-    await this._context.anchorService.validateChainInclusion(proof)
-    return proof
   }
 
   /**
