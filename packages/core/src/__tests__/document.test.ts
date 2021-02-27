@@ -223,14 +223,14 @@ describe('Document', () => {
       }
 
       ceramic = new Ceramic(modules, params)
-      ceramic._doctypeHandlers['tile'] = doctypeHandler
+      ceramic._doctypeHandlers = new Map().set('tile', doctypeHandler)
       ceramic.context.resolver = resolver
       context.api = ceramic
       await ceramic._init(false, false)
 
       const paramsNoSchemaValidation = { ...params, validateDocs: false };
       ceramicWithoutSchemaValidation = new Ceramic(modules, paramsNoSchemaValidation)
-      ceramicWithoutSchemaValidation._doctypeHandlers['tile'] = doctypeHandler
+      ceramicWithoutSchemaValidation._doctypeHandlers = new Map().set('tile', doctypeHandler)
       ceramicWithoutSchemaValidation.context.resolver = resolver
 
       await ceramicWithoutSchemaValidation._init(false, false)
@@ -641,7 +641,7 @@ describe('Document', () => {
       }
 
       ceramic = new Ceramic(modules, params)
-      ceramic._doctypeHandlers['tile'] = doctypeHandler
+      ceramic._doctypeHandlers = new Map().set('tile', doctypeHandler)
       ceramic.context.resolver = resolver
       context.api = ceramic
       await ceramic._init(false, false)

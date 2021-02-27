@@ -395,7 +395,7 @@ class Ceramic implements CeramicApi {
    */
   async _init(doPeerDiscovery: boolean, restoreDocuments: boolean): Promise<void> {
     this.pinStore = await this._pinStoreFactory.createPinStore()
-    this.pin = new LocalPinApi(this.pinStore, this._loadDoc.bind(this), this._logger)
+    this.pin = new LocalPinApi(this.pinStore, this.loadDocument.bind(this), this._logger)
 
     if (doPeerDiscovery) {
       await this._ipfsTopology.start()
