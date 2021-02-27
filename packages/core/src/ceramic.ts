@@ -40,6 +40,7 @@ import { randomUint32 } from '@stablelib/random'
 import { LocalPinApi } from './local-pin-api';
 import { Repository } from './repository';
 import { HandlersMap } from './handlers-map';
+import { LoadingQueue } from './loading-queue';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../package.json')
@@ -152,6 +153,7 @@ class Ceramic implements CeramicApi {
 
   public pin: PinApi // Set during init()
   public pinStore: PinStore // Set during init()
+  private loadingQueue: LoadingQueue; // Set during init()
 
   private readonly _doctypeHandlers: HandlersMap
   private readonly _repository: Repository
@@ -396,6 +398,7 @@ class Ceramic implements CeramicApi {
   async _init(doPeerDiscovery: boolean, restoreDocuments: boolean): Promise<void> {
     this.pinStore = await this._pinStoreFactory.createPinStore()
     this.pin = new LocalPinApi(this.pinStore, this.loadDocument.bind(this), this._logger)
+    this.loadingQueue = new LoadingQueue(this._repository, this.dispatcher, this._doctypeHandlers, this.context, this.pinStore)
 
     if (doPeerDiscovery) {
       await this._ipfsTopology.start()
@@ -586,15 +589,15 @@ class Ceramic implements CeramicApi {
    */
   async _loadDoc(docId: DocID | CommitID | string, opts: DocOpts = {}): Promise<Document> {
     const docRef = DocRef.from(docId)
-    let doc: Document
-    if (await this._repository.has(docRef.baseID)) {
-      doc = await this._repository.get(docRef.baseID)
-    } else {
-      // Load the current version of the document
-      const doctypeHandler = this._doctypeHandlers.get(docRef.typeName)
-      doc = await Document.load(docRef.baseID, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts)
-      this._repository.add(doc)
-    }
+    const doc = await this.loadingQueue.load(docRef, opts)
+    // if (await this._repository.has(docRef.baseID)) {
+    //   doc = await this._repository.get(docRef.baseID)
+    // } else {
+    //   // Load the current version of the document
+    //   const doctypeHandler = this._doctypeHandlers.get(docRef.typeName)
+    //   doc = await Document.load(docRef.baseID, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts)
+    //   this._repository.add(doc)
+    // }
 
     // If DocID is requested, return the document
     if (docRef instanceof DocID) {
