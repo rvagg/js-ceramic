@@ -28,8 +28,6 @@ import {
 import { Resolver } from "did-resolver"
 
 import { DID } from 'dids'
-import { TileDoctypeHandler } from "@ceramicnetwork/doctype-tile-handler"
-import { Caip10LinkDoctypeHandler } from "@ceramicnetwork/doctype-caip10-link-handler"
 import { DiagnosticsLogger, LogLevel } from "@ceramicnetwork/logger";
 import { PinStoreFactory } from "./store/pin-store-factory";
 import { PinStore } from "./store/pin-store";
@@ -41,6 +39,7 @@ import InMemoryAnchorService from "./anchor/memory/in-memory-anchor-service"
 import { randomUint32 } from '@stablelib/random'
 import { LocalPinApi } from './local-pin-api';
 import { Repository } from './repository';
+import { HandlersMap } from './handlers-map';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../package.json')
@@ -154,7 +153,7 @@ class Ceramic implements CeramicApi {
   public pin: PinApi // Set during init()
   public pinStore: PinStore // Set during init()
 
-  private readonly _doctypeHandlers: Record<string, DoctypeHandler<Doctype>>
+  private readonly _doctypeHandlers: HandlersMap
   private readonly _repository: Repository
   private readonly _ipfsTopology: IpfsTopology
   private readonly _logger: DiagnosticsLogger
@@ -186,10 +185,7 @@ class Ceramic implements CeramicApi {
     }
     this.context.anchorService.ceramic = this
 
-    this._doctypeHandlers = {
-      'tile': new TileDoctypeHandler(),
-      'caip10-link': new Caip10LinkDoctypeHandler()
-    }
+    this._doctypeHandlers = new HandlersMap(this._logger)
 
     this._repository = modules.repository
   }
@@ -429,8 +425,7 @@ class Ceramic implements CeramicApi {
    * @param doctypeHandler - Document type handler
    */
   addDoctypeHandler<T extends Doctype>(doctypeHandler: DoctypeHandler<T>): void {
-    this._logger.debug(`Registered handler for ${doctypeHandler.name} doctype`)
-    this._doctypeHandlers[doctypeHandler.name] = doctypeHandler
+    this._doctypeHandlers.add(doctypeHandler)
   }
 
   /**
@@ -463,7 +458,7 @@ class Ceramic implements CeramicApi {
    * @param opts - Initialization options
    */
   async createDocument<T extends Doctype>(doctype: string, params: DocParams, opts?: DocOpts): Promise<T> {
-    const handler = this.handler(doctype)
+    const handler = this._doctypeHandlers.get(doctype)
     const genesis = await handler.doctype.makeGenesis(params, this.context, opts)
     return this.createDocumentFromGenesis(doctype, genesis, opts)
   }
@@ -475,7 +470,7 @@ class Ceramic implements CeramicApi {
    * @param opts - Initialization options
    */
   async createDocumentFromGenesis<T extends Doctype>(doctype: string, genesis: any, opts: DocOpts = {}): Promise<T> {
-    const handler = this.handler(doctype)
+    const handler = this._doctypeHandlers.get(doctype)
     const genesisCid = await this.dispatcher.storeCommit(genesis)
     const docId = new DocID(doctype, genesisCid)
     if (await this._repository.has(docId)) { // FIXME NEXT DRY
@@ -596,7 +591,7 @@ class Ceramic implements CeramicApi {
       doc = await this._repository.get(docRef.baseID)
     } else {
       // Load the current version of the document
-      const doctypeHandler = this.handler(docRef.typeName)
+      const doctypeHandler = this._doctypeHandlers.get(docRef.typeName)
       doc = await Document.load(docRef.baseID, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts)
       this._repository.add(doc)
     }
@@ -607,15 +602,6 @@ class Ceramic implements CeramicApi {
     } else {
       // Here CommitID is requested, let's return document at specific commit
       return doc.rewind(docRef)
-    }
-  }
-
-  private handler(doctypeName: string): DoctypeHandler<Doctype> {
-    const handler = this._doctypeHandlers[doctypeName]
-    if (handler) {
-      return handler
-    } else {
-      throw new Error(doctypeName + " is not a valid doctype")
     }
   }
 
