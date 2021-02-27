@@ -476,10 +476,10 @@ class Ceramic implements CeramicApi {
     const handler = this._doctypeHandlers.get(doctype)
     const genesisCid = await this.dispatcher.storeCommit(genesis)
     const docId = new DocID(doctype, genesisCid)
-    if (await this._repository.has(docId)) { // FIXME NEXT DRY
+    const found = await this._repository.get(docId)
+    if (found) { // FIXME NEXT DRY
       this._logger.verbose(`Document ${docId.toString()} loaded from cache`)
-      const document = await this._repository.get(docId)
-      return document.doctype as T
+      return found.doctype as T
     } else {
       const document = await Document.create(docId, handler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
       // this.repository.add(document) TODO See Document#register, it adds to the repository too

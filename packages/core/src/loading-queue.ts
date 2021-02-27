@@ -19,9 +19,10 @@ export class LoadingQueue {
   ) {}
 
   async load(id: DocID | CommitID, opts: DocOpts = {}) {
-    const docId = DocRef.from(id).baseID
-    if (await this.repository.has(docId)) {
-      return this.repository.get(docId);
+    const docId = DocRef.from(id).baseID;
+    const found = await this.repository.get(docId);
+    if (found) {
+      return found;
     } else {
       // Load the current version of the document
       const handler = this.handlers.get(docId.typeName);
