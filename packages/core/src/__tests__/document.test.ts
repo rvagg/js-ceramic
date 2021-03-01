@@ -101,8 +101,9 @@ jest.mock('../dispatcher', () => {
 })
 
 const anchorUpdate = async (anchorService: InMemoryAnchorService, doc: TileDoctype): Promise<void> => {
+  const onChange = new Promise<void>(resolve => doc.on('change', () => resolve()))
   await anchorService.anchor()
-  return new Promise(resolve => doc.on('change', resolve))
+  return onChange
 }
 
 const create = async (params: TileParams, ceramic: Ceramic, context: Context, opts: DocOpts = {}): Promise<TileDoctype> => {
