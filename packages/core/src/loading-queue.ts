@@ -16,6 +16,7 @@ export class LoadingQueue {
     private readonly handlers: HandlersMap,
     private readonly context: Context,
     private readonly pinStore: PinStore,
+    private readonly validateDocs: boolean,
   ) {}
 
   async load(id: DocID | CommitID, opts: DocOpts = {}) {
@@ -33,7 +34,7 @@ export class LoadingQueue {
         throw new Error(`No genesis commit found with CID ${genesisCid.toString()}`);
       }
       const state = await handler.applyCommit(commit, docId.cid, this.context);
-      const validate = true;
+      const validate = this.validateDocs;
       const document = new Document(state, this.dispatcher, this.pinStore, validate, this.context, handler);
 
       if (validate) {

@@ -246,21 +246,13 @@ describe('Document', () => {
       expect(doc.state.anchorStatus).not.toEqual(AnchorStatus.NOT_REQUESTED)
     })
 
-    it('is loaded correctly', async () => {
-      const doc1 = await create({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, ceramic, context, { anchor: false, publish: false, sync: false })
-      const doc2 = await Document.load(doc1.id, doctypeHandler, dispatcher, pinStore, context, { sync: false })
-
-      expect(doc1.id).toEqual(doc2.id)
-      expect(doc1.content).toEqual(initialContent)
-      expect(doc1.state.anchorStatus).toEqual(AnchorStatus.NOT_REQUESTED)
-    })
-
     it('handles new tip correctly', async () => {
       const tmpDoc = await create({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, ceramic, context)
       await anchorUpdate(anchorService, tmpDoc)
       const docId = tmpDoc.id
       const log = tmpDoc.state.log
-      const doc = await Document.load(docId, doctypeHandler, dispatcher, pinStore, context, { sync: false })
+      const loadingQueue = (ceramic as any).loadingQueue
+      const doc = await loadingQueue.load(docId, { sync: false })
       // changes will not load since no network and no local tip storage yet
       expect(doc.content).toEqual(initialContent)
       expect(doc.state).toEqual(expect.objectContaining({ signature: SignatureStatus.SIGNED, anchorStatus: 0 }))
@@ -424,7 +416,8 @@ describe('Document', () => {
       expect(doc1.content).toEqual(newContent)
       const tipValidUpdate = doc1.tip
       // create invalid change that happened after main change
-      const doc2 = await Document.load(docId, doctypeHandler, dispatcher, pinStore, context, { sync: false })
+      const loadingQueue = (ceramic as any).loadingQueue
+      const doc2 = await loadingQueue.load(docId, { sync: false })
       await doc2._handleTip(tipPreUpdate)
       // add short wait to get different anchor time
       // sometime the tests are very fast
@@ -527,29 +520,6 @@ describe('Document', () => {
         const document = docs[doc.id.toString()]
         await document.applyCommit(updateRec)
         fail('Should not be able to assign a schema to a document that does not conform')
-      } catch (e) {
-        expect(e.message).toEqual('Validation Error: data[\'stuff\'] should be string')
-      }
-    })
-
-    it('Enforces schema when loading genesis record', async () => {
-      const schemaDoc = await create({ content: stringMapSchema, metadata: { controllers } }, ceramic, context)
-      await anchorUpdate(anchorService, schemaDoc)
-
-      const docParams = {
-        content: {stuff: 1},
-        metadata: {controllers, schema: schemaDoc.commitId.toString()}
-      }
-      // Create a document that isn't conforming to the schema
-      const doc = await create(docParams, ceramicWithoutSchemaValidation, context)
-      await anchorUpdate(anchorService, doc)
-
-      expect(doc.content).toEqual({stuff:1})
-      expect(doc.metadata.schema).toEqual(schemaDoc.commitId.toString())
-
-      try {
-        await Document.load(doc.id, doctypeHandler, dispatcher, pinStore, context, { sync: false })
-        fail("Should not be able to load a document that doesn't conform to its schema")
       } catch (e) {
         expect(e.message).toEqual('Validation Error: data[\'stuff\'] should be string')
       }
