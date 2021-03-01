@@ -7,7 +7,10 @@ import { validateState } from './validate-state';
 import { Dispatcher } from './dispatcher';
 import { PinStore } from './store/pin-store';
 
-const DEFAULT_LOAD_DOCOPTS = { anchor: false, publish: false, sync: true };
+// DocOpts defaults for document load operations
+export const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
+// DocOpts defaults for document write operations
+export const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
 
 export class LoadingQueue {
   constructor(
