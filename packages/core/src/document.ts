@@ -92,30 +92,6 @@ export class Document extends EventEmitter implements DocStateHolder {
   ): Promise<Document> {
     // Fill 'opts' with default values for any missing fields
     opts = {...DEFAULT_WRITE_DOCOPTS, ...opts}
-    return this.load(docId, handler, dispatcher, pinStore, context, opts, validate)
-  }
-
-  /**
-   * Loads the Doctype by id
-   * @param docId - Document ID
-   * @param handler - find handler
-   * @param dispatcher - Dispatcher instance
-   * @param pinStore - PinStore instance
-   * @param context - Ceramic context
-   * @param opts - Initialization options
-   * @param validate - Validate content against schema
-   */
-  static async load<T extends Doctype> (
-      docId: DocID,
-      handler: DoctypeHandler<T>,
-      dispatcher: Dispatcher,
-      pinStore: PinStore,
-      context: Context,
-      opts: DocOpts = {},
-      validate = true): Promise<Document> {
-    // Fill 'opts' with default values for any missing fields
-    opts = {...DEFAULT_LOAD_DOCOPTS, ...opts}
-
     const genesisCid = docId.cid
     const commit = await dispatcher.retrieveCommit(genesisCid)
     if (commit == null) {
