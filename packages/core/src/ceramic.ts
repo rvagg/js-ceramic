@@ -40,7 +40,7 @@ import { randomUint32 } from '@stablelib/random'
 import { LocalPinApi } from './local-pin-api';
 import { Repository } from './repository';
 import { HandlersMap } from './handlers-map';
-import { LoadingQueue } from './loading-queue';
+import { DEFAULT_WRITE_DOCOPTS, LoadingQueue } from './loading-queue';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../package.json')
@@ -473,19 +473,10 @@ class Ceramic implements CeramicApi {
    * @param opts - Initialization options
    */
   async createDocumentFromGenesis<T extends Doctype>(doctype: string, genesis: any, opts: DocOpts = {}): Promise<T> {
-    const handler = this._doctypeHandlers.get(doctype)
     const genesisCid = await this.dispatcher.storeCommit(genesis)
     const docId = new DocID(doctype, genesisCid)
-    const found = await this._repository.get(docId)
-    if (found) { // FIXME NEXT DRY
-      this._logger.verbose(`Document ${docId.toString()} loaded from cache`)
-      return found.doctype as T
-    } else {
-      const document = await Document.create(docId, handler, this.dispatcher, this.pinStore, this.context, opts, this._validateDocs);
-      // this.repository.add(document) TODO See Document#register, it adds to the repository too
-      this._logger.verbose(`Document ${docId.toString()} successfully created`)
-      return document.doctype as T
-    }
+    const document = await this.loadingQueue.load(docId, {...DEFAULT_WRITE_DOCOPTS, ...opts})
+    return document.doctype as T
   }
 
   /**

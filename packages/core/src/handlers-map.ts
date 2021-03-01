@@ -19,8 +19,9 @@ export class HandlersMap {
     }
   }
 
-  add<T extends Doctype>(doctypeHandler: DoctypeHandler<T>): void {
+  add<T extends Doctype>(doctypeHandler: DoctypeHandler<T>): HandlersMap {
     this.logger.debug(`Registered handler for ${doctypeHandler.name} doctype`);
     this.handlers.set(doctypeHandler.name, doctypeHandler);
+    return this
   }
 }

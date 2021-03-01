@@ -135,6 +135,7 @@ describe('Dispatcher', () => {
       fakeHandler,
       null
     )
+    await dispatcher.repository.add(doc)
     await dispatcher.register(doc)
 
     // Store the query ID sent when the doc is registered so we can use it as the response ID later

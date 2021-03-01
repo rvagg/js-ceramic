@@ -10,6 +10,7 @@ import { TileDoctypeHandler } from '@ceramicnetwork/doctype-tile-handler'
 import { PinStore } from "../store/pin-store";
 import { LevelStateStore } from "../store/level-state-store";
 import { DID } from "dids"
+import cloneDeep from 'lodash.clonedeep'
 
 import { Resolver } from "did-resolver"
 import ThreeIdResolver from '@ceramicnetwork/3id-did-resolver'
@@ -248,12 +249,12 @@ describe('Document', () => {
     })
 
     it('handles new tip correctly', async () => {
-      const tmpDoc = await create({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, ceramic, context)
+      const tmpDoc = await create({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, ceramic, context, {anchor: false})
+      const initialState = cloneDeep(tmpDoc.state)
+      docs[tmpDoc.id.toString()].anchor()
       await anchorUpdate(anchorService, tmpDoc)
-      const docId = tmpDoc.id
       const log = tmpDoc.state.log
-      const loadingQueue = (ceramic as any).loadingQueue
-      const doc = await loadingQueue.load(docId, { sync: false })
+      const doc = new Document(initialState, dispatcher, pinStore, true, context, doctypeHandler)
       // changes will not load since no network and no local tip storage yet
       expect(doc.content).toEqual(initialContent)
       expect(doc.state).toEqual(expect.objectContaining({ signature: SignatureStatus.SIGNED, anchorStatus: 0 }))
@@ -405,6 +406,7 @@ describe('Document', () => {
 
     it('handles basic conflict', async () => {
       const doc1 = await create({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, ceramic, context)
+      const initialState = cloneDeep(doc1.state)
       const docId = doc1.id
       await anchorUpdate(anchorService, doc1)
       const tipPreUpdate = doc1.tip
@@ -417,12 +419,10 @@ describe('Document', () => {
       expect(doc1.content).toEqual(newContent)
       const tipValidUpdate = doc1.tip
       // create invalid change that happened after main change
-      const loadingQueue = (ceramic as any).loadingQueue
-      const doc2 = await loadingQueue.load(docId, { sync: false })
+      const doc2 = new Document(initialState, dispatcher, pinStore, true, context, doctypeHandler)
       await doc2._handleTip(tipPreUpdate)
       // add short wait to get different anchor time
       // sometime the tests are very fast
-      await new Promise(resolve => setTimeout(resolve, 1))
       // TODO - better mock for anchors
 
       const conflictingNewContent = { asdf: 2342 }

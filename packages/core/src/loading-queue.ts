@@ -41,14 +41,12 @@ export class LoadingQueue {
       const state = await handler.applyCommit(commit, docId.cid, this.context);
       const validate = this.validateDocs;
       const document = new Document(state, this.dispatcher, this.pinStore, validate, this.context, handler);
-
       if (validate) {
         await validateState(document.state, document.content, this.context.api);
       }
-
+      await this.repository.add(document);
       await document._syncDocumentToCurrent(this.pinStore, opts);
       this.logger.verbose(`Document ${docId.toString()} successfully loaded`)
-      this.repository.add(document);
       return document;
     }
   }

@@ -21,13 +21,8 @@ import { SubscriptionSet } from "./subscription-set";
 import { concatMap } from "rxjs/operators";
 import { DiagnosticsLogger } from "@ceramicnetwork/logger";
 import { BehaviorSubject } from 'rxjs'
-import { validateState } from './validate-state';
 import { ConflictResolution } from './conflict-resolution';
-
-// DocOpts defaults for document load operations
-const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
-// DocOpts defaults for document write operations
-const DEFAULT_WRITE_DOCOPTS = {anchor: true, publish: true, sync: false}
+import { DEFAULT_WRITE_DOCOPTS } from './loading-queue';
 
 type RetrieveCommitFunc = (cid: CID | string, path?: string) => any
 
@@ -69,43 +64,6 @@ export class Document extends EventEmitter implements DocStateHolder {
     this._applyQueue = new PQueue({ concurrency: 1 })
     this.retrieveCommit = this.dispatcher.retrieveCommit.bind(this.dispatcher)
     this.conflictResolution = new ConflictResolution(_context, dispatcher, handler, _validate)
-  }
-
-  /**
-   * Creates new Doctype with params
-   * @param docId - Document ID
-   * @param handler - DoctypeHandler instance
-   * @param dispatcher - Dispatcher instance
-   * @param pinStore - PinStore instance
-   * @param context - Ceramic context
-   * @param opts - Initialization options
-   * @param validate - Validate content against schema
-   */
-  static async create (
-      docId: DocID,
-      handler: DoctypeHandler<Doctype>,
-      dispatcher: Dispatcher,
-      pinStore: PinStore,
-      context: Context,
-      opts: DocOpts = {},
-      validate = true,
-  ): Promise<Document> {
-    // Fill 'opts' with default values for any missing fields
-    opts = {...DEFAULT_WRITE_DOCOPTS, ...opts}
-    const genesisCid = docId.cid
-    const commit = await dispatcher.retrieveCommit(genesisCid)
-    if (commit == null) {
-      throw new Error(`No genesis commit found with CID ${genesisCid.toString()}`)
-    }
-    const state = await handler.applyCommit(commit, docId.cid, context)
-    const document = new Document(state, dispatcher, pinStore, validate, context, handler)
-
-    if (validate) {
-      await validateState(document.state, document.content, context.api)
-    }
-
-    await document._syncDocumentToCurrent(pinStore, opts)
-    return document
   }
 
   /**

@@ -15,6 +15,9 @@ import CID from 'cids'
 import { Resolver } from "did-resolver"
 import ThreeIdResolver from '@ceramicnetwork/3id-did-resolver'
 import InMemoryAnchorService from "../../anchor/memory/in-memory-anchor-service"
+import { DEFAULT_WRITE_DOCOPTS, LoadingQueue } from '../../loading-queue';
+import { Repository } from '../../repository';
+import { HandlersMap } from '../../handlers-map';
 
 // mock Dispatcher
 jest.mock('../../dispatcher', () => {
@@ -142,6 +145,9 @@ jest.mock('../../dispatcher', () => {
 })
 
 const anchorUpdate = (doctype: Doctype): Promise<void> => new Promise(resolve => doctype.on('change', resolve))
+const repository = new Repository()
+const loggerProvider = new LoggerProvider()
+const logger = loggerProvider.getDiagnosticsLogger()
 
 describe('Level data store', () => {
 
@@ -153,6 +159,7 @@ describe('Level data store', () => {
   let doctypeHandler: TileDoctypeHandler
   let anchorService: AnchorService
   let context: Context
+  let loadingQueue: LoadingQueue
 
   beforeEach(async () => {
     dispatcher = Dispatcher()
@@ -216,13 +223,14 @@ describe('Level data store', () => {
       networkName: 'inmemory',
     })
     store = await storeFactory.createPinStore()
+    loadingQueue = new LoadingQueue(repository, dispatcher, new HandlersMap(logger).add(doctypeHandler), context, store, logger, true)
   })
 
   it('pins document correctly without IPFS pinning', async () => {
     const genesis = await TileDoctype.makeGenesis({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, context)
     const genesisCid = await dispatcher.storeCommit(genesis)
     const docId = new DocID('tile', genesisCid)
-    const doc = await Document.create(docId, doctypeHandler, dispatcher, store, context)
+    const doc = await loadingQueue.load(docId, DEFAULT_WRITE_DOCOPTS)
 
     await anchorUpdate(doc.doctype)
 
@@ -240,9 +248,7 @@ describe('Level data store', () => {
     const genesis = await TileDoctype.makeGenesis({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, context)
     const genesisCid = await dispatcher.storeCommit(genesis)
     const docId = new DocID('tile', genesisCid)
-    const doc = await Document.create(docId, doctypeHandler, dispatcher, store, context, {
-      anchor: false, publish: false, sync: false,
-    })
+    const doc = await loadingQueue.load(docId, {anchor: false, publish: false, sync: false,})
 
     let docState = await store.stateStore.load(doc.id)
     expect(docState).toBeNull()
@@ -258,7 +264,7 @@ describe('Level data store', () => {
     const genesis = await TileDoctype.makeGenesis({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, context)
     const genesisCid = await dispatcher.storeCommit(genesis)
     const docId = new DocID('tile', genesisCid)
-    const doc = await Document.create(docId, doctypeHandler, dispatcher, store, context)
+    const doc = await loadingQueue.load(docId, DEFAULT_WRITE_DOCOPTS)
     await anchorUpdate(doc.doctype)
 
     let docState = await store.stateStore.load(doc.id)
@@ -275,7 +281,7 @@ describe('Level data store', () => {
     const genesis = await TileDoctype.makeGenesis({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, context)
     const genesisCid = await dispatcher.storeCommit(genesis)
     const docId = new DocID('tile', genesisCid)
-    const doc = await Document.create(docId, doctypeHandler, dispatcher, store, context)
+    const doc = await loadingQueue.load(docId, DEFAULT_WRITE_DOCOPTS)
     await anchorUpdate(doc.doctype)
 
     await store.add(doc.doctype)
@@ -289,7 +295,7 @@ describe('Level data store', () => {
     const genesis = await TileDoctype.makeGenesis({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, context)
     const genesisCid = await dispatcher.storeCommit(genesis)
     const docId = new DocID('tile', genesisCid)
-    const doc = await Document.create(docId, doctypeHandler, dispatcher, store, context)
+    const doc = await loadingQueue.load(docId, DEFAULT_WRITE_DOCOPTS)
     await anchorUpdate(doc.doctype)
 
     await store.rm(doc.id)
@@ -300,7 +306,7 @@ describe('Level data store', () => {
     const genesis = await TileDoctype.makeGenesis({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, context)
     const genesisCid = await dispatcher.storeCommit(genesis)
     const docId = new DocID('tile', genesisCid)
-    const doc = await Document.create(docId, doctypeHandler, dispatcher, store, context)
+    const doc = await loadingQueue.load(docId, DEFAULT_WRITE_DOCOPTS)
     await anchorUpdate(doc.doctype)
 
     await store.add(doc.doctype)
@@ -325,7 +331,7 @@ describe('Level data store', () => {
     const genesis = await TileDoctype.makeGenesis({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, context)
     const genesisCid = await dispatcher.storeCommit(genesis)
     const docId = new DocID('tile', genesisCid)
-    const doc = await Document.create(docId, doctypeHandler, dispatcher, store, context)
+    const doc = await loadingQueue.load(docId, DEFAULT_WRITE_DOCOPTS)
     await anchorUpdate(doc.doctype)
 
     const pinned = []
@@ -342,7 +348,7 @@ describe('Level data store', () => {
     const genesis = await TileDoctype.makeGenesis({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, context)
     const genesisCid = await dispatcher.storeCommit(genesis)
     const docId = new DocID('tile', genesisCid)
-    const doc = await Document.create(docId, doctypeHandler, dispatcher, store, context)
+    const doc = await loadingQueue.load(docId, DEFAULT_WRITE_DOCOPTS)
     await anchorUpdate(doc.doctype)
 
     const levelPath = (await tmp.dir({unsafeCleanup: true})).path
