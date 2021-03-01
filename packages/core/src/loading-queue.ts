@@ -1,11 +1,12 @@
 import { Repository } from './repository';
-import { CommitID, DocID, DocRef } from '@ceramicnetwork/docid';
+import { DocID } from '@ceramicnetwork/docid';
 import { Document } from './document';
 import { HandlersMap } from './handlers-map';
 import { Context, DocOpts } from '@ceramicnetwork/common';
 import { validateState } from './validate-state';
 import { Dispatcher } from './dispatcher';
 import { PinStore } from './store/pin-store';
+import { DiagnosticsLogger } from '@ceramicnetwork/logger';
 
 // DocOpts defaults for document load operations
 export const DEFAULT_LOAD_DOCOPTS = {anchor: false, publish: false, sync: true}
@@ -19,13 +20,14 @@ export class LoadingQueue {
     private readonly handlers: HandlersMap,
     private readonly context: Context,
     private readonly pinStore: PinStore,
+    private readonly logger: DiagnosticsLogger,
     private readonly validateDocs: boolean,
   ) {}
 
-  async load(id: DocID | CommitID, opts: DocOpts = {}) {
-    const docId = DocRef.from(id).baseID;
+  async load(docId: DocID, opts: DocOpts = {}) {
     const found = await this.repository.get(docId);
     if (found) {
+      this.logger.verbose(`Document ${docId.toString()} loaded from cache`)
       return found;
     } else {
       // Load the current version of the document
@@ -45,6 +47,7 @@ export class LoadingQueue {
       }
 
       await document._syncDocumentToCurrent(this.pinStore, opts);
+      this.logger.verbose(`Document ${docId.toString()} successfully loaded`)
       this.repository.add(document);
       return document;
     }

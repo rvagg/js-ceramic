@@ -398,7 +398,7 @@ class Ceramic implements CeramicApi {
   async _init(doPeerDiscovery: boolean, restoreDocuments: boolean): Promise<void> {
     this.pinStore = await this._pinStoreFactory.createPinStore()
     this.pin = new LocalPinApi(this.pinStore, this.loadDocument.bind(this), this._logger)
-    this.loadingQueue = new LoadingQueue(this._repository, this.dispatcher, this._doctypeHandlers, this.context, this.pinStore, this._validateDocs)
+    this.loadingQueue = new LoadingQueue(this._repository, this.dispatcher, this._doctypeHandlers, this.context, this.pinStore, this._logger, this._validateDocs)
 
     if (doPeerDiscovery) {
       await this._ipfsTopology.start()
@@ -589,15 +589,7 @@ class Ceramic implements CeramicApi {
    */
   async _loadDoc(docId: DocID | CommitID | string, opts: DocOpts = {}): Promise<Document> {
     const docRef = DocRef.from(docId)
-    const doc = await this.loadingQueue.load(docRef, opts)
-    // if (await this._repository.has(docRef.baseID)) {
-    //   doc = await this._repository.get(docRef.baseID)
-    // } else {
-    //   // Load the current version of the document
-    //   const doctypeHandler = this._doctypeHandlers.get(docRef.typeName)
-    //   doc = await Document.load(docRef.baseID, doctypeHandler, this.dispatcher, this.pinStore, this.context, opts)
-    //   this._repository.add(doc)
-    // }
+    const doc = await this.loadingQueue.load(docRef.baseID, opts)
 
     // If DocID is requested, return the document
     if (docRef instanceof DocID) {
