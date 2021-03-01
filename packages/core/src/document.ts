@@ -24,7 +24,6 @@ import { BehaviorSubject } from 'rxjs'
 import { ConflictResolution } from './conflict-resolution';
 import { DEFAULT_WRITE_DOCOPTS } from './loading-queue';
 
-type RetrieveCommitFunc = (cid: CID | string, path?: string) => any
 
 /**
  * Document handles the update logic of the Doctype instance
@@ -39,7 +38,6 @@ export class Document extends EventEmitter implements DocStateHolder {
   private _isProcessing: boolean
   _doctype: Doctype
 
-  private readonly retrieveCommit: RetrieveCommitFunc
   private readonly conflictResolution: ConflictResolution;
 
   constructor (initialState: DocState,
@@ -62,7 +60,6 @@ export class Document extends EventEmitter implements DocStateHolder {
     this._logger = _context.loggerProvider.getDiagnosticsLogger()
 
     this._applyQueue = new PQueue({ concurrency: 1 })
-    this.retrieveCommit = this.dispatcher.retrieveCommit.bind(this.dispatcher)
     this.conflictResolution = new ConflictResolution(_context, dispatcher, handler, _validate)
   }
 
