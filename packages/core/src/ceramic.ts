@@ -323,7 +323,7 @@ class Ceramic implements CeramicApi {
 
     const ipfsTopology = new IpfsTopology(ipfs, networkOptions.name, logger)
     const pinStoreFactory = new PinStoreFactory(ipfs, pinStoreOptions)
-    const repository = new Repository()
+    const repository = new Repository(config.docCacheLimit)
     const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, repository, logger, pubsubLogger)
 
     const params = {

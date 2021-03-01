@@ -53,8 +53,8 @@ export class Dispatcher {
   /**
    * Unregister document by ID.
    */
-  unregister (docId: DocID): void {
-    this.repository.delete(docId)
+  async unregister (docId: DocID): Promise<void> {
+    await this.repository.delete(docId)
   }
 
   /**
