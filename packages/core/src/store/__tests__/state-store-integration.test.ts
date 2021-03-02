@@ -196,7 +196,10 @@ describe('Level data store', () => {
       }
     })
 
-    const api = {getSupportedChains: jest.fn(async () => {return await anchorService.getSupportedChains()})}
+    const api = {
+      getSupportedChains: jest.fn(async () => {return await anchorService.getSupportedChains()}),
+      loadDocument: () => { throw new Error(`Not supported while in test`) }
+    }
     const resolver = new Resolver({ ...threeIdResolver })
     const loggerProvider = new LoggerProvider()
     context = {

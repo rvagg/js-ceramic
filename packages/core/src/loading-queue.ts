@@ -15,7 +15,7 @@ export const DEFAULT_LOAD_DOCOPTS = { anchor: false, publish: false, sync: true 
 export const DEFAULT_WRITE_DOCOPTS = { anchor: true, publish: true, sync: false };
 
 export class LoadingQueue {
-  sync: NamedPQueue = new NamedPQueue()
+  sync: NamedPQueue = new NamedPQueue();
 
   constructor(
     private readonly repository: Repository,
@@ -46,7 +46,7 @@ export class LoadingQueue {
         const validate = this.validateDocs;
         const document = new Document(state, this.dispatcher, this.pinStore, validate, this.context, handler);
         if (validate) {
-          await validateState(document.state, document.content, this.context.api);
+          await validateState(document.state, document.content, this.context.api.loadDocument.bind(this.context.api));
         }
         await this.repository.add(document);
         await document._syncDocumentToCurrent(this.pinStore, opts);

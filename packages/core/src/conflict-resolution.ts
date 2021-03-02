@@ -244,7 +244,7 @@ export class ConflictResolution {
         const isGenesis = !payload.prev;
         const effectiveState = isGenesis ? tmpState : tmpState.next;
         if (this.isValidationEnabled) {
-          await validateState(effectiveState, effectiveState.content, this.context.api);
+          await validateState(effectiveState, effectiveState.content, this.context.api.loadDocument.bind(this.context.api));
         }
         state = tmpState; // if validation is successful
       }
