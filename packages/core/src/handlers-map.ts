@@ -6,8 +6,9 @@ import { DiagnosticsLogger } from '@ceramicnetwork/logger';
 export class HandlersMap {
   private readonly handlers: Map<string, DoctypeHandler<Doctype>>;
 
-  constructor(private readonly logger: DiagnosticsLogger) {
-    this.handlers = new Map().set('tile', new TileDoctypeHandler()).set('caip10-link', new Caip10LinkDoctypeHandler());
+  constructor(private readonly logger: DiagnosticsLogger, handlers?: Map<string, DoctypeHandler<Doctype>>) {
+    this.handlers =
+      handlers || new Map().set('tile', new TileDoctypeHandler()).set('caip10-link', new Caip10LinkDoctypeHandler());
   }
 
   get<A extends Doctype>(doctypeName: string): DoctypeHandler<A> {
@@ -22,6 +23,6 @@ export class HandlersMap {
   add<T extends Doctype>(doctypeHandler: DoctypeHandler<T>): HandlersMap {
     this.logger.debug(`Registered handler for ${doctypeHandler.name} doctype`);
     this.handlers.set(doctypeHandler.name, doctypeHandler);
-    return this
+    return this;
   }
 }

@@ -2,7 +2,7 @@ import CID from 'cids'
 import { Document } from '../document'
 import tmp from 'tmp-promise'
 import { Dispatcher } from '../dispatcher'
-import Ceramic from "../ceramic"
+import Ceramic, { CeramicModules } from '../ceramic';
 import { Context, LoggerProvider, PinningBackend } from '@ceramicnetwork/common';
 import { AnchorStatus, DocOpts, SignatureStatus } from "@ceramicnetwork/common"
 import { TileDoctype, TileParams } from "@ceramicnetwork/doctype-tile"
@@ -21,6 +21,7 @@ import InMemoryAnchorService from "../anchor/memory/in-memory-anchor-service"
 import {FakeTopology} from "./fake-topology";
 import {PinStoreFactory} from "../store/pin-store-factory";
 import { Repository } from '../repository';
+import { HandlersMap } from '../handlers-map';
 
 const recs: Record<any, any> = {}
 const docs: Record<string, Document> = {}
@@ -206,7 +207,7 @@ describe('Document', () => {
           return pinStore
         }
       };
-      const modules = {
+      const modules: CeramicModules = {
         anchorService,
         didResolver: resolver,
         dispatcher,
@@ -214,7 +215,9 @@ describe('Document', () => {
         ipfsTopology: topology,
         loggerProvider,
         pinStoreFactory: pinStoreFactory as any as PinStoreFactory,
-        repository
+        pinStore: pinStoreFactory.createPinStore(),
+        repository,
+        doctypeHandlers: new HandlersMap(loggerProvider.getDiagnosticsLogger(), new Map().set('tile', doctypeHandler))
       }
 
       const params = {
@@ -225,7 +228,6 @@ describe('Document', () => {
       }
 
       ceramic = new Ceramic(modules, params)
-      ceramic._doctypeHandlers = new Map().set('tile', doctypeHandler)
       ceramic.context.resolver = resolver
       context.api = ceramic
       await ceramic._init(false, false)
@@ -240,12 +242,12 @@ describe('Document', () => {
 
     it('is created correctly', async () => {
       const doc = await create({ content: initialContent, metadata: { controllers, tags: ['3id'] } }, ceramic, context)
-      //
-      // expect(doc.content).toEqual(initialContent)
-      // expect(dispatcher.register).toHaveBeenCalledTimes(1)
-      // expect(doc.state.anchorStatus).toEqual(AnchorStatus.PENDING)
-      // await anchorUpdate(anchorService, doc)
-      // expect(doc.state.anchorStatus).not.toEqual(AnchorStatus.NOT_REQUESTED)
+
+      expect(doc.content).toEqual(initialContent)
+      expect(dispatcher.register).toHaveBeenCalledTimes(1)
+      expect(doc.state.anchorStatus).toEqual(AnchorStatus.PENDING)
+      await anchorUpdate(anchorService, doc)
+      expect(doc.state.anchorStatus).not.toEqual(AnchorStatus.NOT_REQUESTED)
     })
 
     it('handles new tip correctly', async () => {
@@ -569,7 +571,7 @@ describe('Document', () => {
 
       const resolver = new Resolver({ ...threeIdResolver })
       const loggerProvider = new LoggerProvider()
-      const repository = new Repository()
+      const repository = new Repository(100)
       context = {
         did: user,
         anchorService,
@@ -591,7 +593,7 @@ describe('Document', () => {
           return pinStore
         }
       };
-      const modules = {
+      const modules: CeramicModules = {
         anchorService,
         didResolver: resolver,
         dispatcher,
@@ -599,8 +601,9 @@ describe('Document', () => {
         ipfsTopology: topology,
         loggerProvider,
         pinStoreFactory: pinStoreFactory as any as PinStoreFactory,
-        pinningBackends: null,
-        repository
+        pinStore: pinStoreFactory.createPinStore(),
+        repository,
+        doctypeHandlers: new HandlersMap(loggerProvider.getDiagnosticsLogger(), new Map().set('tile', doctypeHandler))
       }
 
       const params = {
@@ -612,7 +615,6 @@ describe('Document', () => {
       }
 
       ceramic = new Ceramic(modules, params)
-      ceramic._doctypeHandlers = new Map().set('tile', doctypeHandler)
       ceramic.context.resolver = resolver
       context.api = ceramic
       await ceramic._init(false, false)

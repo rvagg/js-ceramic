@@ -97,6 +97,8 @@ export interface CeramicModules {
   loggerProvider: LoggerProvider,
   pinStoreFactory: PinStoreFactory,
   repository: Repository
+  doctypeHandlers: HandlersMap,
+  pinStore: PinStore
 }
 
 /**
@@ -151,9 +153,9 @@ class Ceramic implements CeramicApi {
   public readonly context: Context
   public readonly dispatcher: Dispatcher
 
-  public pin: PinApi // Set during init()
-  public pinStore: PinStore // Set during init()
-  private loadingQueue: LoadingQueue; // Set during init()
+  public readonly pin: PinApi;
+  public readonly pinStore: PinStore;
+  private readonly loadingQueue: LoadingQueue;
 
   private readonly _doctypeHandlers: HandlersMap
   private readonly _repository: Repository
@@ -187,9 +189,13 @@ class Ceramic implements CeramicApi {
     }
     this.context.anchorService.ceramic = this
 
-    this._doctypeHandlers = new HandlersMap(this._logger)
+    this._doctypeHandlers = modules.doctypeHandlers
 
     this._repository = modules.repository
+
+    this.pinStore = modules.pinStore
+    this.pin = new LocalPinApi(this.pinStore, this.loadDocument.bind(this), this._logger)
+    this.loadingQueue = new LoadingQueue(this._repository, this.dispatcher, this._doctypeHandlers, this.context, this.pinStore, this._logger, this._validateDocs)
   }
 
   /**
@@ -321,8 +327,10 @@ class Ceramic implements CeramicApi {
       pinningBackends: config.pinningBackends,
     }
 
+    const doctypeHandlers = new HandlersMap(logger)
     const ipfsTopology = new IpfsTopology(ipfs, networkOptions.name, logger)
     const pinStoreFactory = new PinStoreFactory(ipfs, pinStoreOptions)
+    const pinStore = pinStoreFactory.createPinStore()
     const repository = new Repository(config.docCacheLimit)
     const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, repository, logger, pubsubLogger)
 
@@ -341,7 +349,9 @@ class Ceramic implements CeramicApi {
       ipfsTopology,
       loggerProvider,
       pinStoreFactory,
-      repository
+      repository,
+      doctypeHandlers: doctypeHandlers,
+      pinStore: pinStore
     }
 
     return [modules, params]
@@ -396,10 +406,6 @@ class Ceramic implements CeramicApi {
    * @param restoreDocuments - Controls whether we attempt to load pinned document state into memory at startup
    */
   async _init(doPeerDiscovery: boolean, restoreDocuments: boolean): Promise<void> {
-    this.pinStore = this._pinStoreFactory.createPinStore()
-    this.pin = new LocalPinApi(this.pinStore, this.loadDocument.bind(this), this._logger)
-    this.loadingQueue = new LoadingQueue(this._repository, this.dispatcher, this._doctypeHandlers, this.context, this.pinStore, this._logger, this._validateDocs)
-
     if (doPeerDiscovery) {
       await this._ipfsTopology.start()
     }
