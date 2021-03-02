@@ -55,6 +55,7 @@ export class Document extends EventEmitter implements DocStateHolder {
     // FIXME NEXT distinct only
     this.state$.subscribe(state => {
       this._doctype.state = state
+      this._doctype.emit('change')
     })
 
     this._logger = _context.loggerProvider.getDiagnosticsLogger()
@@ -162,7 +163,6 @@ export class Document extends EventEmitter implements DocStateHolder {
         const next = await this.conflictResolution.applyTip(this.state$.value, cid);
         if (next) {
           this.state$.next(next);
-          this._doctype.emit('change'); // FIXME NEXT
         }
       });
     } finally {
@@ -225,6 +225,7 @@ export class Document extends EventEmitter implements DocStateHolder {
                   if (!asr.cid.equals(this.tip)) {
                     return;
                   }
+                  console.log('failed', asr.message)
                   this.state$.next({ ...this.state, anchorStatus: AnchorStatus.FAILED })
                   subscription.unsubscribe();
                   return;

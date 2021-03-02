@@ -18,6 +18,7 @@ import InMemoryAnchorService from "../../anchor/memory/in-memory-anchor-service"
 import { DEFAULT_WRITE_DOCOPTS, LoadingQueue } from '../../loading-queue';
 import { Repository } from '../../repository';
 import { HandlersMap } from '../../handlers-map';
+import { DocumentFactory } from '../../document-factory';
 
 // mock Dispatcher
 jest.mock('../../dispatcher', () => {
@@ -145,7 +146,6 @@ jest.mock('../../dispatcher', () => {
 })
 
 const anchorUpdate = (doctype: Doctype): Promise<void> => new Promise(resolve => doctype.on('change', resolve))
-const repository = new Repository()
 const loggerProvider = new LoggerProvider()
 const logger = loggerProvider.getDiagnosticsLogger()
 
@@ -155,6 +155,7 @@ describe('Level data store', () => {
   const controllers = ['did:3:k2t6wyfsu4pg0t2n4j8ms3s33xsgqjhtto04mvq8w5a2v5xo48idyz38l7ydki']
 
   let store: PinStore
+  let repository: Repository
   let dispatcher: Dispatcher
   let doctypeHandler: TileDoctypeHandler
   let anchorService: AnchorService
@@ -226,7 +227,10 @@ describe('Level data store', () => {
       networkName: 'inmemory',
     })
     store = storeFactory.createPinStore()
-    loadingQueue = new LoadingQueue(repository, dispatcher, new HandlersMap(logger).add(doctypeHandler), context, store, logger, true)
+    repository = new Repository(100, store.stateStore)
+    const handlers = new HandlersMap(logger).add(doctypeHandler)
+    const documentFactory = new DocumentFactory(dispatcher, store, context, true, handlers)
+    loadingQueue = new LoadingQueue(repository, dispatcher, handlers, context, store, logger, documentFactory)
   })
 
   it('pins document correctly without IPFS pinning', async () => {

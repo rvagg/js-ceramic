@@ -4,6 +4,7 @@ import {AnchorStatus, IpfsApi, TestUtils} from "@ceramicnetwork/common"
 import tmp from 'tmp-promise'
 import * as u8a from 'uint8arrays'
 import { createIPFS, swarmConnect } from './ipfs-util';
+import { delay } from '../pubsub/__tests__/delay';
 
 jest.mock('../store/level-state-store')
 
@@ -270,9 +271,6 @@ describe('Ceramic anchoring', () => {
     ])
     const controller = ceramic1.context.did.id
 
-    ceramic1.context.anchorService = ceramic3.context.anchorService // use ceramic3 in-memory anchor service
-    ceramic2.context.anchorService = ceramic3.context.anchorService // use ceramic3 in-memory anchor service
-
     const doctype1 = await ceramic1.createDocument(DOCTYPE_TILE, { content: { x: 1 } }, { anchor: false, publish: true })
     const doctype2 = await ceramic2.loadDocument(doctype1.id)
 
@@ -291,11 +289,14 @@ describe('Ceramic anchoring', () => {
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    await ceramic3.context.anchorService.anchor()
+    await ceramic1.context.anchorService.anchor()
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    await ceramic2.context.anchorService.anchor()
 
     await handle1
     await handle2
-
+    await delay(100) // To propagate changes
     // Only one of the updates should have won
     expect(doctype1.state.log.length).toEqual(3)
     expect(doctype2.state.log.length).toEqual(3)

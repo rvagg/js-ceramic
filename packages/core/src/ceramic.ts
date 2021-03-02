@@ -41,6 +41,7 @@ import { LocalPinApi } from './local-pin-api';
 import { Repository } from './repository';
 import { HandlersMap } from './handlers-map';
 import { DEFAULT_WRITE_DOCOPTS, LoadingQueue } from './loading-queue';
+import { DocumentFactory } from './document-factory';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../package.json')
@@ -195,7 +196,9 @@ class Ceramic implements CeramicApi {
 
     this.pinStore = modules.pinStore
     this.pin = new LocalPinApi(this.pinStore, this.loadDocument.bind(this), this._logger)
-    this.loadingQueue = new LoadingQueue(this._repository, this.dispatcher, this._doctypeHandlers, this.context, this.pinStore, this._logger, this._validateDocs)
+    const documentFactory = new DocumentFactory(this.dispatcher, this.pinStore, this.context, this._validateDocs, this._doctypeHandlers)
+    this._repository.setDocumentFactory(documentFactory)
+    this.loadingQueue = new LoadingQueue(this._repository, this.dispatcher, this._doctypeHandlers, this.context, this.pinStore, this._logger, documentFactory)
   }
 
   /**
@@ -331,7 +334,7 @@ class Ceramic implements CeramicApi {
     const ipfsTopology = new IpfsTopology(ipfs, networkOptions.name, logger)
     const pinStoreFactory = new PinStoreFactory(ipfs, pinStoreOptions)
     const pinStore = pinStoreFactory.createPinStore()
-    const repository = new Repository(config.docCacheLimit)
+    const repository = new Repository(config.docCacheLimit, pinStore.stateStore)
     const dispatcher = new Dispatcher(ipfs, networkOptions.pubsubTopic, repository, logger, pubsubLogger)
 
     const params = {
@@ -625,8 +628,8 @@ class Ceramic implements CeramicApi {
    */
   async close (): Promise<void> {
     this._logger.imp("Closing Ceramic instance")
-    await this.pinStore.close()
     await this.dispatcher.close()
+    await this.pinStore.close()
     this._ipfsTopology.stop()
     this._logger.imp("Ceramic instance closed successfully")
   }

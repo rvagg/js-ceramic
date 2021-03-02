@@ -4,6 +4,7 @@ import tmp from 'tmp-promise'
 import { IpfsApi, CeramicApi } from '@ceramicnetwork/common';
 import * as u8a from 'uint8arrays'
 import { createIPFS } from './ipfs-util';
+import { delay } from '../pubsub/__tests__/delay';
 
 const seed = u8a.fromString('6e34b2e1a9624113d81ece8a8a22e6e97f0e145c25c1d4d2d0e62753b4060c83', 'base16')
 
@@ -69,6 +70,7 @@ describe('Ceramic document pinning', () => {
     ceramic = await createCeramic(ipfs1, tmpFolder.path)
     const doc2 = await ceramic.loadDocument(doc1.id)
     expect(doc2.content).toEqual(content)
+    await delay(200)
     await ceramic.close()
   })
 
@@ -84,6 +86,7 @@ describe('Ceramic document pinning', () => {
     ceramic = await createCeramic(ipfs1, tmpFolder.path)
     const doc2 = await createDoc(ceramic, ceramic.did.id, 'test')
     expect(doc2.content).toEqual(content)
+    await delay(200)
     await ceramic.close()
   })
 })

@@ -8,6 +8,7 @@ import { Dispatcher } from './dispatcher';
 import { PinStore } from './store/pin-store';
 import { DiagnosticsLogger } from '@ceramicnetwork/logger';
 import { NamedPQueue } from './named-p-queue';
+import { DocumentFactory } from './document-factory';
 
 // DocOpts defaults for document load operations
 export const DEFAULT_LOAD_DOCOPTS = { anchor: false, publish: false, sync: true };
@@ -24,7 +25,7 @@ export class LoadingQueue {
     private readonly context: Context,
     private readonly pinStore: PinStore,
     private readonly logger: DiagnosticsLogger,
-    private readonly validateDocs: boolean,
+    private readonly documentFactory: DocumentFactory,
   ) {}
 
   async load(docId: DocID, opts: DocOpts = {}) {
@@ -43,11 +44,7 @@ export class LoadingQueue {
           throw new Error(`No genesis commit found with CID ${genesisCid.toString()}`);
         }
         const state = await handler.applyCommit(commit, docId.cid, this.context);
-        const validate = this.validateDocs;
-        const document = new Document(state, this.dispatcher, this.pinStore, validate, this.context, handler);
-        if (validate) {
-          await validateState(document.state, document.content, this.context.api.loadDocument.bind(this.context.api));
-        }
+        const document = await this.documentFactory.build(state);
         await this.repository.add(document);
         await document._syncDocumentToCurrent(this.pinStore, opts);
         this.logger.verbose(`Document ${docId.toString()} successfully loaded`);

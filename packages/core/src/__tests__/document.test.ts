@@ -201,7 +201,7 @@ describe('Document', () => {
 
       const topology = new FakeTopology(dispatcher._ipfs, networkOptions.name, loggerProvider.getDiagnosticsLogger())
 
-      const repository = new Repository(100)
+      const repository = new Repository(100, pinStore.stateStore)
       const pinStoreFactory = {
         createPinStore: () => {
           return pinStore
@@ -571,7 +571,7 @@ describe('Document', () => {
 
       const resolver = new Resolver({ ...threeIdResolver })
       const loggerProvider = new LoggerProvider()
-      const repository = new Repository(100)
+      const repository = new Repository(100, pinStore.stateStore)
       context = {
         did: user,
         anchorService,
