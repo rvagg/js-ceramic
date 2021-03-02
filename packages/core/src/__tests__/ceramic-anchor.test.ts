@@ -296,7 +296,7 @@ describe('Ceramic anchoring', () => {
 
     await handle1
     await handle2
-    await delay(100) // To propagate changes
+    await delay(200) // To propagate changes
     // Only one of the updates should have won
     expect(doctype1.state.log.length).toEqual(3)
     expect(doctype2.state.log.length).toEqual(3)
