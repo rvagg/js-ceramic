@@ -1,6 +1,6 @@
 import CID from 'cids'
 import {Resolver} from "did-resolver"
-import dagCBOR from "ipld-dag-cbor"
+import * as dagCBOR from "@ipld/dag-cbor"
 import KeyDidResolver from 'key-did-resolver'
 import ThreeIdResolver from '@ceramicnetwork/3id-did-resolver'
 import {DID} from 'dids'
@@ -10,6 +10,7 @@ import {TileDoctype} from "@ceramicnetwork/doctype-tile";
 import cloneDeep from 'lodash.clonedeep'
 import * as sha256 from '@stablelib/sha256'
 import * as uint8arrays from "uint8arrays";
+import { serialize } from './serialize';
 
 jest.mock('did-jwt', () => ({
     // TODO - We should test for when this function throws as well
@@ -90,27 +91,6 @@ const RECORDS = {
         blockNumber: 123456,
         chainId: 'fakechain:123',
     }
-}
-
-const serialize = (data: any): any => {
-    if (Array.isArray(data)) {
-        const serialized = []
-        for (const item of data) {
-            serialized.push(serialize(item))
-        }
-        return serialized
-    }
-    if (!CID.isCID(data) && typeof data === "object") {
-        const serialized: Record<string, any> = {}
-        for (const prop in data) {
-            serialized[prop] = serialize(data[prop])
-        }
-        return serialized
-    }
-    if (CID.isCID(data)) {
-        return data.toString()
-    }
-    return data
 }
 
 let did: DID
@@ -200,7 +180,7 @@ it('makes genesis record correctly', async () => {
     }, context) as SignedCommitContainer
     const {jws, linkedBlock} = record
 
-    const payload = dagCBOR.util.deserialize(linkedBlock)
+    const payload = dagCBOR.decode(linkedBlock)
     const generated = {jws: serialize(jws), linkedBlock: serialize(payload)}
     expect(generated).toEqual(serialize(RECORDS.genesisGenerated))
 })
@@ -214,7 +194,7 @@ it('applies genesis record correctly', async () => {
     }, context) as SignedCommitContainer
     await context.ipfs.dag.put(record, FAKE_CID_1)
 
-    const payload = dagCBOR.util.deserialize(record.linkedBlock)
+    const payload = dagCBOR.decode(record.linkedBlock)
     await context.ipfs.dag.put(payload, record.jws.link)
 
     const docState = await tileHandler.applyCommit(record.jws, FAKE_CID_1, context)
@@ -234,7 +214,7 @@ it('makes signed record correctly', async () => {
 
     const record = await TileDoctype._makeCommit(doctype, did, RECORDS.r1.desiredContent) as SignedCommitContainer
     const {jws: rJws, linkedBlock: rLinkedBlock} = record
-    const rPayload = dagCBOR.util.deserialize(rLinkedBlock)
+    const rPayload = dagCBOR.decode(rLinkedBlock)
     expect({jws: serialize(rJws), payload: serialize(rPayload)}).toEqual(RECORDS.r1.record)
 })
 
@@ -247,7 +227,7 @@ it('applies signed record correctly', async () => {
     }, context) as SignedCommitContainer
     await context.ipfs.dag.put(genesisRecord, FAKE_CID_1)
 
-    const payload = dagCBOR.util.deserialize(genesisRecord.linkedBlock)
+    const payload = dagCBOR.decode(genesisRecord.linkedBlock)
     await context.ipfs.dag.put(payload, genesisRecord.jws.link)
 
     // apply genesis
@@ -258,7 +238,7 @@ it('applies signed record correctly', async () => {
 
     await context.ipfs.dag.put(signedRecord, FAKE_CID_2)
 
-    const sPayload = dagCBOR.util.deserialize(signedRecord.linkedBlock)
+    const sPayload = dagCBOR.decode(signedRecord.linkedBlock)
     await context.ipfs.dag.put(sPayload, signedRecord.jws.link)
 
     // apply signed
@@ -275,7 +255,7 @@ it('throws error if record signed by wrong DID', async () => {
     }, context) as SignedCommitContainer
     await context.ipfs.dag.put(genesisRecord, FAKE_CID_1)
 
-    const payload = dagCBOR.util.deserialize(genesisRecord.linkedBlock)
+    const payload = dagCBOR.decode(genesisRecord.linkedBlock)
     await context.ipfs.dag.put(payload, genesisRecord.jws.link)
 
     await expect(tileDoctypeHandler.applyCommit(genesisRecord.jws, FAKE_CID_1, context)).rejects.toThrow(/wrong DID/)
@@ -290,7 +270,7 @@ it('applies anchor record correctly', async () => {
     }, context) as SignedCommitContainer
     await context.ipfs.dag.put(genesisRecord, FAKE_CID_1)
 
-    const payload = dagCBOR.util.deserialize(genesisRecord.linkedBlock)
+    const payload = dagCBOR.decode(genesisRecord.linkedBlock)
     await context.ipfs.dag.put(payload, genesisRecord.jws.link)
 
     // apply genesis
@@ -301,7 +281,7 @@ it('applies anchor record correctly', async () => {
 
     await context.ipfs.dag.put(signedRecord, FAKE_CID_2)
 
-    const sPayload = dagCBOR.util.deserialize(signedRecord.linkedBlock)
+    const sPayload = dagCBOR.decode(signedRecord.linkedBlock)
     await context.ipfs.dag.put(sPayload, signedRecord.jws.link)
 
     // apply signed

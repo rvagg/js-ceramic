@@ -29,7 +29,7 @@ jest.mock('../dispatcher', () => {
   const cloneDeep = require('lodash.clonedeep') // eslint-disable-line @typescript-eslint/no-var-requires
   const sha256 = require('@stablelib/sha256') // eslint-disable-line @typescript-eslint/no-var-requires
   const { DoctypeUtils } = require('@ceramicnetwork/common') // eslint-disable-line @typescript-eslint/no-var-requires
-  const dagCBOR = require('ipld-dag-cbor') // eslint-disable-line @typescript-eslint/no-var-requires
+  const dagCBOR = require('@ipld/dag-cbor') // eslint-disable-line @typescript-eslint/no-var-requires
   const u8a = require('uint8arrays') // eslint-disable-line @typescript-eslint/no-var-requires
   const hash = (data: string): CID => {
     const body = u8a.concat([u8a.fromString('1220', 'base16'), sha256.hash(u8a.fromString(data))])
@@ -61,7 +61,7 @@ jest.mock('../dispatcher', () => {
       storeCommit: jest.fn(async (rec) => {
         if (DoctypeUtils.isSignedCommitContainer(rec)) {
           const { jws, linkedBlock } = rec
-          const block = dagCBOR.util.deserialize(linkedBlock)
+          const block = dagCBOR.decode(linkedBlock)
 
           const cidLink = hash(JSON.stringify(block))
           recs[cidLink.toString()] = block

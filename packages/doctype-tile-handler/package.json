@@ -36,17 +36,23 @@
     "@ceramicnetwork/3id-did-resolver": "^0.7.0-rc.7",
     "@stablelib/sha256": "^1.0.0",
     "@types/lodash.clonedeep": "^4.5.6",
-    "cids": "1.0.2",
+    "cids": "1.1.6",
     "did-resolver": "^2.1.1",
     "dids": "^1.1.1",
-    "ipld-dag-cbor": "^0.17.0",
+    "@ipld/dag-cbor": "^3.0.0",
     "key-did-resolver": "^0.2.5"
   },
   "jest": {
     "testEnvironment": "jest-environment-uint8array",
     "transformIgnorePatterns": [
       "/node_modules(?!/did-jwt)/"
-    ]
+    ],
+    "moduleNameMapper": {
+      "@ipld/dag-cbor": "@ipld/dag-cbor/cjs/index.js",
+      "cborg": "cborg/cjs/cborg.js",
+      "@multiformats/base-x": "@multiformats/base-x/src/index.js",
+      "multiformats": "multiformats/cjs/src/index.js"
+    }
   },
   "gitHead": "34eeee25597b0a60def72906c26d3afd6230aaf1"
 }

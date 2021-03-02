@@ -1,7 +1,7 @@
 import DocID from '@ceramicnetwork/docid';
 import CID from 'cids';
 import { UnreachableCaseError } from '@ceramicnetwork/common';
-import dagCBOR from 'ipld-dag-cbor';
+import * as dagCBOR from '@ipld/dag-cbor';
 import * as multihashes from 'multihashes';
 import * as sha256 from '@stablelib/sha256';
 import { TextDecoder } from 'util';
@@ -38,7 +38,7 @@ export type PubsubMessage = UpdateMessage | QueryMessage | ResponseMessage;
 
 function messageHash(message: any): string {
   // DAG-CBOR encoding
-  const encoded = dagCBOR.util.serialize(message);
+  const encoded = dagCBOR.encode(message);
 
   // SHA-256 hash
   const id = sha256.hash(encoded);
