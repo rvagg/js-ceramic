@@ -35,7 +35,7 @@ describe("#open", () => {
     test("throw if no IPFS instance", async () => {
         const ipfs = null;
         const pinning = new IpfsPinning("ipfs+context", ipfs);
-        expect(() => pinning.open.bind(pinning)).toThrow(NoIpfsInstanceError);
+        expect(() => pinning.open()).toThrow(NoIpfsInstanceError);
     });
     test("use IPFS client pointed to #ipfsAddress", async () => {
         const pinning = new IpfsPinning("ipfs+https://example.com", {});
