@@ -9,6 +9,7 @@ export * from './logger-provider-old' // TODO remove this
 export * from './pinning'
 export * from './doc-cache'
 export * from './unreachable-case-error'
+export * from './running-state-like'
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
